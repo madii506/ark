@@ -6,17 +6,17 @@
 <title>ARK</title>
 <meta name="description" content="Launch a pump.fun coin paired to $ARK, or to any pump.fun coin. 100% of creator fees go to holders.">
 <meta name="theme-color" content="#08080a">
-<link rel="icon" href="/img/icon-32.png"><link rel="apple-touch-icon" href="/img/icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/icon-32.png?v=4"><link rel="icon" type="image/png" sizes="64x64" href="/img/icon-64.png?v=4"><link rel="apple-touch-icon" href="/img/icon-180.png">
 <meta property="og:title" content="ARK"><meta property="og:description" content="Every coin boards in pairs."><meta property="og:image" content="https://ark-eta-neon.vercel.app/img/og.png"><meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://ark-eta-neon.vercel.app/img/og.png">
 <link rel="preload" href="/fonts/inter-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/css/ark.css?v=3">
+<link rel="stylesheet" href="/css/ark.css?v=4">
 <script type="importmap">{"imports":{"three":"/vendor/three.module.min.js"}}</script>
 </head>
 <body>
 <div class="grain" aria-hidden="true"></div>
 <header class="nav"><div class="nav-in">
-  <a class="brand" href="/" aria-label="ARK home"><span data-amark></span>ARK</a>
+  <a class="brand" href="/" aria-label="ARK home">ARK</a>
   <nav class="links"><a href="/board" data-page="board">Board</a><a href="/launch" data-page="launch">Launch</a><a href="/#pairs">Pairs</a><a href="/#ark">$ARK</a><a href="/#how">How it works</a><a href="/docs" data-page="docs">Docs</a><a href="/#faq">FAQ</a></nav>
   <div class="nav-r"><button class="ca" id="caChip" hidden></button><button class="btn wbtn" id="wBtn">Connect</button><button class="burger" aria-label="Menu"><span></span></button></div>
 </div></header>
@@ -79,9 +79,33 @@
   </div>
 </section>
 
+<section class="sec" id="guide">
+  <div class="wrap">
+    <div class="sec-h" data-r><span class="kick"><b>03</b>&nbsp; Launch in four steps</span><h2 class="h2">From idea to aboard<br>in about a minute.</h2></div>
+    <div class="guide">
+      <div class="guide-vis"><div class="gv card" id="gv">
+        <div class="gv-num" id="gvNum">01</div>
+        <div class="gv-stage">
+          <div class="gv-s" data-s="0"><div class="gv-pic"></div><div class="gv-lines"><i></i><i></i></div></div>
+          <div class="gv-s" data-s="1"><div class="gv-pair"><span class="gv-orb">◎</span><span class="gv-link"></span><span class="gv-orb gold">A</span></div></div>
+          <div class="gv-s" data-s="2"><ul class="gv-checks"><li>✓</li><li>✓</li><li>✓</li><li>✓</li><li>✓</li><li>✓</li></ul></div>
+          <div class="gv-s" data-s="3"><div class="gv-stamp">ABOARD</div></div>
+        </div>
+        <div class="gv-bar"><i id="gvBar"></i></div>
+      </div></div>
+      <div class="guide-steps">
+        <div class="gstep" data-i="0"><span class="mono gold">STEP 01</span><h3>Make the coin</h3><p>A picture, a name and a ticker. Add a story and links if you want. The boarding pass fills in as you type.</p></div>
+        <div class="gstep" data-i="1"><span class="mono gold">STEP 02</span><h3>Pick the pair</h3><p>$ARK by default. Or any pump.fun coin that is still on its curve or trades on PumpSwap: real ones are listed, or paste an address.</p></div>
+        <div class="gstep" data-i="2"><span class="mono gold">STEP 03</span><h3>Walk the gangway</h3><p>Eleven checks run live while you type: ticker, picture, links, dev buy, wallet, pump.fun status and more.</p></div>
+        <div class="gstep" data-i="3"><span class="mono gold">STEP 04</span><h3>Sign and board</h3><p>One signature creates the coin on pump.fun, paired and with fees to holders. An optional dev buy of up to 1 SOL follows right after.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="sec" id="pairs">
   <div class="wrap">
-    <div class="sec-h" data-r><span class="kick"><b>03</b>&nbsp; Pairs</span><h2 class="h2">Pair with <span class="gold">$ARK.</span><br>Or any pump.fun coin.</h2><p>$ARK is the main pair. Any pump.fun coin that is still on its curve or trades on PumpSwap can be a pair too. These are real ones, checked on-chain right now.</p></div>
+    <div class="sec-h" data-r><span class="kick"><b>04</b>&nbsp; Pairs</span><h2 class="h2">Pair with <span class="gold">$ARK.</span><br>Or any pump.fun coin.</h2><p>$ARK is the main pair. Any pump.fun coin that is still on its curve or trades on PumpSwap can be a pair too. These are real ones, checked on-chain right now.</p></div>
     <div class="pairs" data-r data-stagger>
       <div class="card pmain" id="pMain"></div>
       <div class="card pad"><div class="fsec-h" style="margin-bottom:14px"><b>Also pairable right now</b><span id="pCount">checking…</span></div><div class="pgrid" id="pGrid"></div></div>
@@ -91,22 +115,46 @@
 
 <section class="sec" id="gangway">
   <div class="wrap">
-    <div class="sec-h" data-r><span class="kick"><b>04</b>&nbsp; The gangway</span><h2 class="h2">Checked before it boards.</h2><p>Every launch runs these checks first. The on-chain ones are verified again, live, on every coin's page.</p></div>
+    <div class="sec-h" data-r><span class="kick"><b>05</b>&nbsp; The gangway</span><h2 class="h2">Checked before it boards.</h2><p>Every launch runs these checks first. The on-chain ones are verified again, live, on every coin's page.</p></div>
     <div class="gang" id="gang" data-r data-stagger></div>
     <div style="margin-top:26px" data-r><a class="btn" href="/launch">Run the gangway on your coin <span class="arr">→</span></a></div>
   </div>
 </section>
 
+<section class="sec" id="compare">
+  <div class="wrap">
+    <div class="sec-h" data-r><span class="kick"><b>06</b>&nbsp; Side by side</span><h2 class="h2">A normal launch<br>vs a launch on <span class="gold">ARK.</span></h2></div>
+    <div class="cmp card" data-r data-stagger>
+      <div class="cmp-row cmp-h"><span></span><span>pump.fun default</span><span class="gold">ARK</span></div>
+      <div class="cmp-row"><span>Pair</span><span>SOL</span><span>$ARK, or a pump.fun coin you pick</span></div>
+      <div class="cmp-row"><span>Creator fees</span><span>to one wallet</span><span>100% to holders, for good</span></div>
+      <div class="cmp-row"><span>Checks before launch</span><span>none</span><span>11 gangway checks</span></div>
+      <div class="cmp-row"><span>Dev buy</span><span>any size</span><span>up to 1 SOL</span></div>
+      <div class="cmp-row"><span>Same ticker</span><span>unlimited</span><span>two coins at most</span></div>
+      <div class="cmp-row"><span>Contract address</span><span>ends in "pump"</span><span>can end in "ark"</span></div>
+      <div class="cmp-row"><span>Where it trades</span><span>pump.fun, then PumpSwap</span><span>pump.fun, then PumpSwap</span></div>
+      <div class="cmp-row"><span>Extra fee</span><span>none</span><span>5% on trades made on ARK · launching is free</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="numbers">
+  <div class="wrap">
+    <div class="sec-h" data-r><span class="kick"><b>07</b>&nbsp; By the numbers</span><h2 class="h2">Every number here<br>is read from the chain.</h2><p>pump.fun's own program settings, as they are right now, and the rules ARK adds on top.</p></div>
+    <div class="nums" id="nums" data-r data-stagger></div>
+  </div>
+</section>
+
 <section class="sec" id="live">
   <div class="wrap">
-    <div class="sec-h" data-r><span class="kick"><b>05</b>&nbsp; Live on pump.fun</span><h2 class="h2">Read from the chain,<br>right now.</h2><p>Straight from pump.fun's program accounts and its latest transactions. Refreshes every minute.</p></div>
+    <div class="sec-h" data-r><span class="kick"><b>08</b>&nbsp; Live on pump.fun</span><h2 class="h2">Read from the chain,<br>right now.</h2><p>Straight from pump.fun's program accounts and its latest transactions. Refreshes every minute.</p></div>
     <div class="livegrid" id="liveGrid" data-r data-stagger></div>
   </div>
 </section>
 
 <section class="sec" id="aboard">
   <div class="wrap">
-    <div class="sec-h" data-r><span class="kick"><b>06</b>&nbsp; Aboard</span><h2 class="h2">The board.</h2><p>Every coin launched through ARK, read straight from the chain.</p></div>
+    <div class="sec-h" data-r><span class="kick"><b>09</b>&nbsp; Aboard</span><h2 class="h2">The board.</h2><p>Every coin launched through ARK, read straight from the chain.</p></div>
     <div id="boardPrev" data-r></div>
     <div style="margin-top:26px" data-r><a class="btn" href="/board">Open the full board <span class="arr">→</span></a></div>
   </div>
@@ -114,7 +162,7 @@
 
 <section class="sec" id="ark">
   <div class="wrap">
-    <div class="sec-h" data-r><span class="kick"><b>07</b>&nbsp; $ARK</span><h2 class="h2">The coin every coin<br>pairs with.</h2></div>
+    <div class="sec-h" data-r><span class="kick"><b>10</b>&nbsp; $ARK</span><h2 class="h2">The coin every coin<br>pairs with.</h2></div>
     <div class="arkblock" data-r data-stagger>
       <div class="card pad grid" id="arkMain"></div>
       <div class="card pad grid" id="arkBuy"></div>
@@ -122,32 +170,41 @@
   </div>
 </section>
 
+<section class="sec" id="timeline">
+  <div class="wrap">
+    <div class="sec-h" data-r><span class="kick"><b>11</b>&nbsp; How we got here</span><h2 class="h2">Two pump.fun upgrades.<br>One ark.</h2></div>
+    <div class="tl" id="tl">
+      <div class="tl-line"><i id="tlFill"></i></div>
+      <div class="tl-item"><span class="tl-dot"></span><span class="mono gold">SEP 12, 2026</span><h3>Holder Rewards</h3><p>pump.fun lets a coin send its creator fees to its holders instead of a wallet. Set at creation, permanent.</p></div>
+      <div class="tl-item"><span class="tl-dot"></span><span class="mono gold">OCT 8, 2026</span><h3>Custom Pairs</h3><p>pump.fun lets a coin trade against another pump.fun coin instead of SOL. Buys route through the pair in one transaction.</p></div>
+      <div class="tl-item"><span class="tl-dot"></span><span class="mono gold">OCT 2026</span><h3>ARK</h3><p>Both, by default, for every coin: paired to $ARK, fees to holders, checked at the gangway.</p></div>
+      <div class="tl-item"><span class="tl-dot"></span><span class="mono gold">NEXT</span><h3>$ARK goes live</h3><p>The moment the contract is set, boarding opens and the first coins take their seats.</p></div>
+    </div>
+  </div>
+</section>
+
 <section class="sec" id="faq">
   <div class="wrap">
-    <div class="sec-h" data-r><span class="kick"><b>08</b>&nbsp; FAQ</span><h2 class="h2">Questions.</h2></div>
+    <div class="sec-h" data-r><span class="kick"><b>12</b>&nbsp; FAQ</span><h2 class="h2">Questions.</h2></div>
     <div class="faq" data-r data-stagger>
       <details><summary>What is ARK?</summary><p>A launchpad on top of pump.fun. Every coin launched here is a normal pump.fun coin with two settings fixed at creation: it is paired to $ARK, or to another pump.fun coin you pick (pump.fun Custom Pairs), and it is a holder-reward coin (pump.fun Holder Rewards).</p></details>
       <details><summary>What does "paired to $ARK" mean?</summary><p>The coin's bonding curve is priced in $ARK instead of SOL. Buying it with SOL goes SOL → $ARK → coin in one transaction, through pump.fun's own multi-hop swap. Selling goes the other way. So every buy of a coin paired to $ARK also buys $ARK.</p></details>
       <details><summary>Can I pair with a coin other than $ARK?</summary><p>Yes. $ARK is the main pair, but you can pick any pump.fun coin that is still on its bonding curve or trades on PumpSwap. The launch page lists real ones and checks any address you paste. Coins that left pump.fun before PumpSwap existed can't be routed, so they can't be a pair.</p></details>
       <details><summary>Who gets the creator fees?</summary><p>The coin's holders. At launch the creator is set to the coin's holder-rewards account, so every creator fee goes there and pump.fun pays it out to holders, in the pair coin. It is permanent: nobody can switch it back to a wallet later.</p></details>
       <details><summary>How big can the dev buy be?</summary><p>Up to 1 SOL, bought right after the launch through the pair. Each wallet can launch up to 50 coins a day, and every ticker can be used by two coins at most.</p></details>
-      <details><summary>Does ARK take a fee?</summary><p>No. ARK adds nothing to launches or trades. You pay pump.fun's normal fees and Solana network fees, and every transaction is simulated before you sign it.</p></details>
+      <details><summary>Does ARK take a fee?</summary><p>Yes, 5% of every buy and sell made with ARK's trade buttons. It is taken inside the same transaction and shown before you sign. Launching a coin and the dev buy are free. pump.fun's normal fees and Solana network fees apply as usual, and every transaction is simulated before you sign it.</p></details>
       <details><summary>What happens when a coin graduates?</summary><p>Like any pump.fun coin it moves to a PumpSwap pool, still paired to the same coin, and holder rewards keep going.</p></details>
-      <details><summary>Can I launch before $ARK is live?</summary><p>No. $ARK is the main pair, so boarding opens the moment $ARK is live. You can already fill in your coin and run the gangway checks.</p></details>
     </div>
   </div>
 </section>
 </main>
 
-<div class="band" data-band aria-hidden="true">
-  <div class="band-row"><span class="o">Paired to</span><span class="g">$ARK</span><span class="s">✦</span><span class="m">Fees to holders</span><span class="s">✦</span><span class="o">Checked at the gangway</span><span class="s">✦</span></div>
-</div>
 <footer class="foot">
   <div class="wrap">
     <div class="big-word" aria-hidden="true">ARK</div>
   </div>
 </footer>
 <script src="/vendor/solana-lite.js" defer></script>
-<script type="module" src="/js/home.js?v=3"></script>
+<script type="module" src="/js/home.js?v=4"></script>
 </body>
 </html>
