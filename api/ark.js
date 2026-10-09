@@ -40,7 +40,7 @@ const {
   bondingCurvePda, holderRewardsPda, creatorVaultPda, quoteAta, isBondingCurveMigrated, canonicalPumpPoolPdaWithQuote,
   getBuyTokenAmountFromSolAmount, getBuySolAmountFromTokenAmount, bondingCurveMarketCap, pumpQuoteReserves, pumpIdl,
 } = pump;
-const { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, NATIVE_MINT, getAssociatedTokenAddressSync, unpackMint, unpackAccount } = require('@solana/spl-token');
+const { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, NATIVE_MINT, getAssociatedTokenAddressSync, unpackMint, unpackAccount, createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction } = require('@solana/spl-token');
 
 /* ---------------- settings ---------------- */
 const E = (k, d = '') => String(process.env[k] == null ? d : process.env[k]).trim();
@@ -60,6 +60,10 @@ const CONFIG = {
   perWallet: Math.round(num(E('ARK_WALLET_DAILY', '50'), 1, 1000, 50)), // launches per wallet per 24h
   perTicker: 2,                                                 // two of every kind
 };
+// ARK's fee: a share of every buy and sell made through ARK's trade buttons (launches and dev buys are free)
+const FEE_WALLET = okKey(E('ARK_FEE_WALLET'));
+const FEE_BPS = Math.round(num(E('ARK_FEE_BPS', '500'), 0, 2000, 500));
+const feeBps = () => (FEE_WALLET && FEE_BPS > 0 ? FEE_BPS : 0);
 const RPCS = [E('RPC_URL'), 'https://solana-rpc.publicnode.com', 'https://api.mainnet-beta.solana.com'].filter(Boolean);
 const DEC = 6;                       // every pump coin has 6 decimals
 const SUPPLY_UNITS = 1e15;           // 1,000,000,000 tokens x 10^6
@@ -611,6 +615,14 @@ function pathFor(mint, side, via, quote) {
   if (side === 'buy') return via === 'PAIR' ? [quote, mint] : [SOL, quote, mint];
   return via === 'PAIR' ? [mint, quote] : [mint, quote, SOL];
 }
+async function feeIxs(user, units, inSol, tokenMint) {
+  if (!feeBps() || units.isZero()) return [];
+  const to = new PublicKey(FEE_WALLET);
+  if (inSol) return [SystemProgram.transfer({ fromPubkey: user, toPubkey: to, lamports: BigInt(units.toString()) })];
+  const prog = await sdkCall(s => s.fetchQuoteTokenProgram(tokenMint));
+  const from = getAssociatedTokenAddressSync(tokenMint, user, true, prog), dest = getAssociatedTokenAddressSync(tokenMint, to, true, prog);
+  return [createAssociatedTokenAccountIdempotentInstruction(user, dest, to, tokenMint, prog), createTransferCheckedInstruction(from, tokenMint, dest, user, BigInt(units.toString()), DEC, [], prog)];
+}
 async function quoteOf(mint) {
   const [ci] = await rpc(c => c.getMultipleAccountsInfo([bondingCurvePda(mint)]));
   if (!ci) throw http(404, 'No pump.fun curve for this coin.');
@@ -730,8 +742,13 @@ async function quote(b) {
   const path = pathFor(mint, side, via, qm);
   const signer = user || (side === 'buy' && (via === 'SOL' || direct) ? await quoter() : null);
   if (!signer) throw http(400, 'Connect a wallet to quote this.');
-  const { hops, out } = await routeOut({ path, side, amountIn: toUnits(amount, inDec), user: signer });
-  return { in: amount, out: toUi(out, outDec), path: path.map(p => p.toBase58()), venues: hops.map(h => h.venue), exact: !!user };
+  const bps = feeBps();
+  let amountIn = toUnits(amount, inDec), fee = 0;
+  if (bps && side === 'buy') { const f = amountIn.muln(bps).divn(10000); amountIn = amountIn.sub(f); fee = toUi(f, inDec); }
+  const { hops, out } = await routeOut({ path, side, amountIn, user: signer });
+  let net = out;
+  if (bps && side === 'sell') { const f = out.muln(bps).divn(10000); net = out.sub(f); fee = toUi(f, outDec); }
+  return { in: amount, out: toUi(net, outDec), fee, feeBps: bps, path: path.map(p => p.toBase58()), venues: hops.map(h => h.venue), exact: !!user };
 }
 
 /* ---------------- the gangway: pre-launch checks ---------------- */
@@ -935,12 +952,17 @@ async function trade(b) {
   const qm = await quoteOf(mint), direct = qm.equals(PublicKey.default);
   const inDec = side === 'buy' && (via === 'SOL' || direct) ? 9 : DEC, outDec = side === 'sell' && (via === 'SOL' || direct) ? 9 : DEC;
   const path = pathFor(mint, side, via, qm);
-  const amountIn = toUnits(amount, inDec);
+  const bps = feeBps();
+  const inSol = side === 'buy' && (via === 'SOL' || direct), outSol = side === 'sell' && (via === 'SOL' || direct);
+  let amountIn = toUnits(amount, inDec), pre = [], post = [], fee = 0;
+  if (bps && side === 'buy') { const f = amountIn.muln(bps).divn(10000); amountIn = amountIn.sub(f); fee = toUi(f, inDec); pre = await feeIxs(user, f, inSol, inSol ? null : qm); }
   const { hops, out } = await routeOut({ path, side, amountIn, user });
   const minOut = out.mul(new BN(Math.round((1 - slip) * 10000))).div(new BN(10000));
   const ixs = await PUMP_SDK.multiHopSwapInstructions({ user, hops, side, amountIn, minAmountOut: minOut });
-  const f = await finalize(user, ixs, [], 1_400_000);
-  return { ...f, out: toUi(out, outDec), min: toUi(minOut, outDec), venues: hops.map(h => h.venue), path: path.map(p => p.toBase58()) };
+  let net = out;
+  if (bps && side === 'sell') { const f = minOut.muln(bps).divn(10000); net = out.sub(out.muln(bps).divn(10000)); fee = toUi(f, outDec); post = await feeIxs(user, f, outSol, outSol ? null : qm); }
+  const f = await finalize(user, [...pre, ...ixs, ...post], [], 1_400_000);
+  return { ...f, out: toUi(net, outDec), min: toUi(minOut, outDec), fee, feeBps: bps, venues: hops.map(h => h.venue), path: path.map(p => p.toBase58()) };
 }
 
 /* ---------------- relay + status ---------------- */
@@ -1109,9 +1131,10 @@ module.exports = async (req, res) => {
       const { global, feeConfig } = await pumpState().catch(() => ({}));
       return send(res, 200, {
         ok: true, ca: CONFIG.ca, x: CONFIG.x, telegram: CONFIG.telegram, launches: CONFIG.launches, registry: REGISTRY.toBase58(), memo: MEMO.toBase58(),
-        devMaxSol: CONFIG.devMaxSol, perWallet: CONFIG.perWallet, perTicker: CONFIG.perTicker,
+        devMaxSol: CONFIG.devMaxSol, perWallet: CONFIG.perWallet, perTicker: CONFIG.perTicker, feeBps: FEE_BPS, feeOn: !!feeBps(),
         pump: global ? { createV2: !!global.createV2Enabled, holderRewards: !!global.isHolderRewardEnabled, maxCurveDepth: global.maxCurveDepth } : null,
         fees: exoticFees(feeConfig), supply: 1e9,
+        curve: global ? { virtualSol: Number(global.initialVirtualSolReserves.toString()) / 1e9, virtualTokens: Number(global.initialVirtualTokenReserves.toString()) / 1e6, realTokens: Number(global.initialRealTokenReserves.toString()) / 1e6 } : null,
       }, 'public, s-maxage=30, stale-while-revalidate=120');
     }
     if (path === 'ark') return send(res, 200, { ok: true, ...(await arkInfo()) }, 'public, s-maxage=10, stale-while-revalidate=30');
