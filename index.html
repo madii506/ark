@@ -6,11 +6,11 @@
 <title>ARK</title>
 <meta name="description" content="Launch a pump.fun coin paired to $ARK, or to any pump.fun coin. 100% of creator fees go to holders.">
 <meta name="theme-color" content="#08080a">
-<link rel="icon" type="image/png" sizes="32x32" href="/img/icon-32.png?v=4"><link rel="icon" type="image/png" sizes="64x64" href="/img/icon-64.png?v=4"><link rel="apple-touch-icon" href="/img/icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/icon-32.png?v=5"><link rel="icon" type="image/png" sizes="64x64" href="/img/icon-64.png?v=5"><link rel="apple-touch-icon" href="/img/icon-180.png">
 <meta property="og:title" content="ARK"><meta property="og:description" content="Every coin boards in pairs."><meta property="og:image" content="https://ark-eta-neon.vercel.app/img/og.png"><meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://ark-eta-neon.vercel.app/img/og.png">
 <link rel="preload" href="/fonts/inter-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/css/ark.css?v=4">
+<link rel="stylesheet" href="/css/ark.css?v=5">
 <script type="importmap">{"imports":{"three":"/vendor/three.module.min.js"}}</script>
 </head>
 <body>
@@ -28,6 +28,11 @@
       <h1 class="hero-ark" aria-label="ARK"><span class="line"><span>ARK</span></span></h1>
       <p class="lede">Launch a pump.fun coin paired to $ARK, or to any pump.fun coin you pick. Every buy routes through the pair, and 100% of creator fees go to the coin's holders.</p>
       <div class="hero-cta"><a class="btn gold lg" href="/launch">Launch a coin <span class="arr">→</span></a><a class="btn lg" href="/board">Open the board</a></div>
+      <div class="ca-pill" id="caPill" hidden>
+        <span class="cp-ic"><span data-amark></span></span><span class="cp-k">$ARK</span>
+        <button class="cp-ca" id="cpCa" type="button" aria-label="Copy the $ARK contract address"><span class="cp-full" id="cpFull"></span><span class="cp-short" id="cpShort"></span><i id="cpCopy">Copy</i></button>
+        <a class="cp-l" id="cpPump" target="_blank" rel="noopener">pump.fun ↗</a><a class="cp-l" id="cpChart" target="_blank" rel="noopener">Chart ↗</a>
+      </div>
       <div class="live">
         <div><small>$ARK</small><b id="lvArk">—</b><em id="lvArk2">main pair</em></div>
         <div><small>Aboard</small><b id="lvCoins">0</b><em>coins launched</em></div>
@@ -205,6 +210,6 @@
   </div>
 </footer>
 <script src="/vendor/solana-lite.js" defer></script>
-<script type="module" src="/js/home.js?v=4"></script>
+<script type="module" src="/js/home.js?v=5"></script>
 </body>
 </html>
