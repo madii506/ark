@@ -37,7 +37,7 @@ const bs58m = require('bs58'); const bs58 = bs58m.default || bs58m;
 const pump = require('@pump-fun/pump-sdk');
 const {
   PUMP_SDK, OnlinePumpSdk, PUMP_PROGRAM_ID, PUMP_AMM_PROGRAM_ID, GLOBAL_PDA, PUMP_FEE_CONFIG_PDA,
-  bondingCurvePda, holderRewardsPda, creatorVaultPda, quoteAta, isBondingCurveMigrated,
+  bondingCurvePda, holderRewardsPda, creatorVaultPda, quoteAta, isBondingCurveMigrated, canonicalPumpPoolPdaWithQuote,
   getBuyTokenAmountFromSolAmount, getBuySolAmountFromTokenAmount, bondingCurveMarketCap, pumpQuoteReserves, pumpIdl,
 } = pump;
 const { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, NATIVE_MINT, getAssociatedTokenAddressSync, unpackMint, unpackAccount } = require('@solana/spl-token');
@@ -56,8 +56,8 @@ const CONFIG = {
   telegram: E('ARK_TG'),
   // launches open once $ARK is out (ARK_CA set); ARK_LAUNCHES=paused closes them
   launches: !ARK ? 'prelaunch' : (E('ARK_LAUNCHES', 'open').toLowerCase() === 'paused' ? 'paused' : 'open'),
-  devCapPct: num(E('ARK_DEV_CAP_PCT', '3'), 0.5, 10, 3),     // max first buy, % of supply
-  perWallet: Math.round(num(E('ARK_WALLET_DAILY', '3'), 1, 50, 3)), // launches per wallet per 24h
+  devMaxSol: num(E('ARK_DEV_MAX_SOL', '1'), 0.01, 100, 1),     // max first buy, in SOL
+  perWallet: Math.round(num(E('ARK_WALLET_DAILY', '50'), 1, 1000, 50)), // launches per wallet per 24h
   perTicker: 2,                                                 // two of every kind
 };
 const RPCS = [E('RPC_URL'), 'https://solana-rpc.publicnode.com', 'https://api.mainnet-beta.solana.com'].filter(Boolean);
@@ -327,7 +327,7 @@ async function image(uri) {
     catch (e) { return null; }
   });
 }
-function curveView(bc, arkUsd, global) {
+function curveView(bc, quoteUsd, global) {
   if (!bc) return null;
   const migrated = isBondingCurveMigrated(bc);
   const irtr = Number(global.initialRealTokenReserves.toString());
@@ -338,39 +338,135 @@ function curveView(bc, arkUsd, global) {
     quoteMint: bc.quoteMint.toBase58(), paired: !!(ARK && bc.quoteMint.equals(ARK)), holderReward: !!bc.isHolderReward, depth: bc.depth || 0,
     mayhem: !!bc.isMayhemMode, complete: !!bc.complete, migrated,
     progress: bc.complete || migrated ? 1 : Math.max(0, Math.min(1, (irtr - Number(bc.realTokenReserves.toString())) / irtr)),
-    arkLocked: Number(bc.realQuoteReserves.toString()) / 10 ** DEC, mcapArk, priceArk, mcapUsd: mcapArk != null && arkUsd ? mcapArk * arkUsd : null,
+    arkLocked: Number(bc.realQuoteReserves.toString()) / 10 ** DEC, mcapArk, priceArk, mcapUsd: mcapArk != null && quoteUsd ? mcapArk * quoteUsd : null,
     feeBucket: Number((bc.creatorFee || new BN(0)).toString()) / 10 ** DEC,
   };
 }
+async function pairMeta(quotes) {
+  // symbol + USD price for each pair mint ($ARK from its own stats, the rest from Dexscreener)
+  const out = {};
+  const ark = ARK ? await arkInfo().catch(() => null) : null;
+  const rest = quotes.filter(q => !(ARK && q === ARK_CA));
+  const dex = rest.length ? await dexFor(rest).catch(() => ({})) : {};
+  for (const q of quotes) {
+    if (ARK && q === ARK_CA) out[q] = { symbol: 'ARK', usd: ark && ark.priceUsd || null, main: true };
+    else { const d = dex[q]; out[q] = { symbol: d && d.baseToken ? clean(d.baseToken.symbol, 16) : short4(q), usd: d ? +d.priceUsd || null : null, main: false }; }
+  }
+  return out;
+}
+const short4 = a => a.slice(0, 4) + '…';
 async function coins() {
   return cached('coins', 20e3, async () => {
     const [list, ark, { global }] = await Promise.all([launches(), arkInfo().catch(() => ({ live: false })), pumpState()]);
-    const arkUsd = ark && ark.priceUsd ? ark.priceUsd : null;
-    if (!list.length) return { list: [], ark, totals: { coins: 0, arkLocked: 0, graduated: 0, holderReward: 0 } };
-    const infos = [];
+    if (!list.length) return { list: [], ark, totals: { coins: 0, arkLocked: 0, graduated: 0, holderReward: 0, onArk: 0 } };
     const mints = list.map(c => new PublicKey(c.mint));
+    const infos = [];
     for (let i = 0; i < mints.length; i += 100) infos.push(...await rpc(c => c.getMultipleAccountsInfo(mints.slice(i, i + 100).map(m => bondingCurvePda(m)))));
-    const [dex, metas] = await Promise.all([dexFor(list.map(c => c.mint)).catch(() => ({})), Promise.all(list.map(c => image(c.uri)))]);
+    const curves = infos.map(x => (x ? safe(() => PUMP_SDK.decodeBondingCurve(x)) : null));
+    const quotes = [...new Set(curves.filter(Boolean).map(bc => bc.quoteMint.toBase58()))];
+    // the creator's holding right now (create_v2 coins are Token-2022)
+    const atas = list.map(c => getAssociatedTokenAddressSync(new PublicKey(c.mint), new PublicKey(c.creator), true, TOKEN_2022_PROGRAM_ID));
+    const [meta, dex, metas, ataInfos] = await Promise.all([
+      pairMeta(quotes),
+      dexFor(list.map(c => c.mint)).catch(() => ({})),
+      Promise.all(list.map(c => image(c.uri))),
+      (async () => { const o = []; for (let i = 0; i < atas.length; i += 100) o.push(...await rpc(c => c.getMultipleAccountsInfo(atas.slice(i, i + 100))).catch(() => atas.slice(i, i + 100).map(() => null))); return o; })(),
+    ]);
     const rows = list.map((c, i) => {
-      const bc = infos[i] ? safe(() => PUMP_SDK.decodeBondingCurve(infos[i])) : null;
-      const cv = curveView(bc, arkUsd, global);
+      const bc = curves[i]; if (!bc) return null;
+      const q = bc.quoteMint.toBase58(), pm = meta[q] || { symbol: short4(q), usd: null, main: false };
+      const cv = curveView(bc, pm.usd, global);
       const p = dex[c.mint], md = metas[i] || {};
+      const acc = ataInfos[i] ? safe(() => unpackAccount(atas[i], ataInfos[i], TOKEN_2022_PROGRAM_ID)) : null;
+      const creatorPct = acc ? Number(acc.amount) / SUPPLY_UNITS * 100 : 0;
       return {
         ...c, image: md.image || null, twitter: md.twitter || '', website: md.website || '', telegram: md.telegram || '',
-        curve: cv,
+        curve: cv, pair: { mint: q, symbol: pm.symbol, main: !!pm.main }, creatorPct,
         mcapUsd: p && (p.marketCap || p.fdv) ? +(p.marketCap || p.fdv) : cv ? cv.mcapUsd : null,
-        priceUsd: p ? +p.priceUsd || null : cv && cv.priceArk != null && arkUsd ? cv.priceArk * arkUsd : null,
+        priceUsd: p ? +p.priceUsd || null : cv && cv.priceArk != null && pm.usd ? cv.priceArk * pm.usd : null,
         chg24: p && p.priceChange ? +p.priceChange.h24 : null, chg1: p && p.priceChange ? +p.priceChange.h1 : null,
         vol24: p && p.volume ? +p.volume.h24 || 0 : null, dex: p ? p.dexId : null,
-        checks: { paired: !!(cv && cv.paired), holders: !!(cv && cv.holderReward), dev: c.devPct <= CONFIG.devCapPct + 1e-9, registry: true },
+        checks: { paired: !!pm.main, pair: (bc.depth || 0) > 0, holders: !!bc.isHolderReward, registry: true },
       };
-    }).filter(r => r.curve && r.curve.paired);
+    }).filter(Boolean);
     const totals = {
-      coins: rows.length, arkLocked: rows.reduce((s, r) => s + (r.curve ? r.curve.arkLocked : 0), 0),
+      coins: rows.length, onArk: rows.filter(r => r.pair.main).length,
+      arkLocked: rows.filter(r => r.pair.main).reduce((s, r) => s + (r.curve ? r.curve.arkLocked : 0), 0),
       graduated: rows.filter(r => r.curve && (r.curve.complete || r.curve.migrated)).length,
       holderReward: rows.filter(r => r.curve && r.curve.holderReward).length,
     };
     return { list: rows, ark, totals };
+  });
+}
+
+/* ---------------- pairs: $ARK first, plus real pump.fun coins that can be a pair right now ---------------- */
+const CURATED = [['FARTCOIN', '9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump'], ['GOAT', 'CzLSujWBLFsSjncfkh59rUFqvafWcY5tzedWJSuypump'], ['PNUT', '2qEHjDLDLbuBgRYvsxhc5D6uDWAivNFZGan56P1tpump'], ['ACT', 'GJAFwWjJ3vnTsrQVabjBVK2TYB1YtRCQXRDfDgUnpump'], ['MOODENG', 'ED5nyyWEzpPPiWimP8vYm7sD7TD3LAt3Q3gRTWHzPJBY'], ['FWOG', 'A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump'], ['MICHI', '5mbK36SZ7J19An8jFochhQS4of8g6BwUjbeCSxBSoWdp'], ['ALCH', 'HNg5PYJmtqcmzXrv6S9zP1CDKk5BgDuyFBxbvNApump'], ['SWARMS', '74SBV4zDXxTRgv1pEMoECskKBkZHc2yGPnc7GYVepump'], ['ZEREBRO', '8x5VqbHA8D7NkD52uNuS5nnt3PwA8pLD34ymskeSo2Wn']];
+const BAD_WORDS = /(nigg|n1gg|fag|retard|porn|sex|\bcum|dick|cock|puss|tits|titcoin|anal\b|rape|nazi|hitler|shit|fuck|whore|slut|nsfw|onlyfans|boob|horny|fetish|kike|cunt|penis|vagina|isis|terror|\bkill)/i;
+// a pump coin can be a pair when its own curve is SOL-quoted, not mayhem, within the depth limit,
+// and tradable from SOL (still on its curve, or graduated into a PumpSwap pool)
+async function pairStatus(mints) {
+  const { global } = await pumpState();
+  const curves = mints.map(m => bondingCurvePda(m)), pools = mints.map(m => canonicalPumpPoolPdaWithQuote(m, NATIVE_MINT));
+  const infos = [];
+  const all = [...curves, ...pools];
+  for (let i = 0; i < all.length; i += 100) infos.push(...await rpc(c => c.getMultipleAccountsInfo(all.slice(i, i + 100))));
+  return mints.map((m, i) => {
+    const ci = infos[i], pi = infos[mints.length + i];
+    if (!ci || !ci.owner.equals(PUMP_PROGRAM_ID)) return { ok: false, why: 'Not a pump.fun coin.' };
+    const bc = safe(() => PUMP_SDK.decodeBondingCurve(ci)); if (!bc) return { ok: false, why: 'Unreadable curve.' };
+    if (!bc.quoteMint.equals(PublicKey.default)) return { ok: false, why: 'It is paired to another coin itself.' };
+    if ((bc.depth || 0) + 1 > global.maxCurveDepth) return { ok: false, why: 'Over pump.fun\'s pair depth limit.' };
+    if (bc.isMayhemMode) return { ok: false, why: 'Mayhem-mode coins cannot be a pair.' };
+    if (!bc.complete) return { ok: true, venue: 'curve' };
+    if (pi && pi.owner.equals(PUMP_AMM_PROGRAM_ID)) return { ok: true, venue: 'pumpswap' };
+    return { ok: false, why: isBondingCurveMigrated(bc) ? 'Graduated before PumpSwap: no pump.fun pool to route through.' : 'Graduating right now.' };
+  });
+}
+async function pairs() {
+  return cached('pairs', 10 * 60e3, async () => {
+    let live = [];
+    try {
+      const j = await getJson('https://api.geckoterminal.com/api/v2/networks/solana/dexes/pumpswap/pools?page=1&sort=h24_volume_usd_desc&include=base_token', 8000);
+      const toks = Object.fromEntries((j.included || []).filter(x => x.type === 'token').map(x => [x.id, x.attributes]));
+      for (const p of j.data || []) {
+        const r = p.relationships || {}, bt = r.base_token && toks[r.base_token.data.id];
+        const qt = r.quote_token && r.quote_token.data && r.quote_token.data.id || '';
+        if (!bt || !/So11111111111111111111111111111111111111112$/.test(qt)) continue;
+        const a = p.attributes || {};
+        live.push({ mint: bt.address, symbol: clean(bt.symbol, 16), name: clean(bt.name, 40), image: bt.image_url && /^https:/.test(bt.image_url) && !/missing/.test(bt.image_url) ? bt.image_url : null, mcapUsd: +(a.market_cap_usd || a.fdv_usd || 0) || null, chg24: a.price_change_percentage ? +a.price_change_percentage.h24 : null, vol24: a.volume_usd ? +a.volume_usd.h24 : null, src: 'live' });
+      }
+    } catch (e) { }
+    live = live.filter(c => c.symbol && !BAD_WORDS.test(c.symbol + ' ' + c.name) && (c.mcapUsd || 0) >= 3e5);
+    const known = CURATED.map(([s, m]) => ({ mint: m, symbol: s, name: s, image: `/img/coins/${s}.png`, src: 'known' }));
+    const all = [...known, ...live].filter((c, i, a) => a.findIndex(x => x.mint === c.mint) === i).slice(0, 44);
+    const st = await pairStatus(all.map(c => new PublicKey(c.mint)));
+    const dex = await dexFor(known.map(c => c.mint)).catch(() => ({}));
+    const rows = all.map((c, i) => { const d = dex[c.mint]; return { ...c, mcapUsd: c.mcapUsd || (d && +(d.marketCap || d.fdv)) || null, chg24: c.chg24 != null ? c.chg24 : d && d.priceChange ? +d.priceChange.h24 : null, pairable: st[i].ok, venue: st[i].venue || null, why: st[i].why || '' }; });
+    const ok = rows.filter(r => r.pairable).sort((a, b) => (b.mcapUsd || 0) - (a.mcapUsd || 0)).slice(0, 24);
+    const ark = ARK ? await arkInfo().catch(() => null) : null;
+    return { main: { mint: ARK_CA || null, symbol: 'ARK', live: !!(ark && ark.live), pairable: !!(ark && ark.pairable), mcapUsd: ark && ark.mcapUsd || null, chg24: ark && ark.chg24, image: '/img/icon-180.png' }, list: ok, checked: rows.length, at: Date.now() };
+  });
+}
+async function resolvePair(pairStr) {
+  const m = pairStr ? pk(pairStr, 'pair') : ARK;
+  if (!m) throw http(403, 'Boarding opens when $ARK is live.');
+  const [st] = await pairStatus([m]);
+  if (!st.ok) throw http(400, (ARK && m.equals(ARK) ? '$ARK' : 'That coin') + ' cannot be a pair right now: ' + st.why);
+  const q = await sdkCall(s => s.resolveQuoteMint(m)).catch(e => { throw http(409, friendly(e)); });
+  return { mint: m, q, main: !!(ARK && m.equals(ARK)), venue: st.venue };
+}
+// pump.fun right now: switches, fees, and how many recent trades already run on custom pairs
+async function liveState() {
+  return cached('livestate', 90e3, async () => {
+    const { global, feeConfig } = await pumpState();
+    let scan = null;
+    try {
+      const r = await recentPumpCoins(100);
+      const custom = r.trades.filter(t => !t.quoteMint.equals(PublicKey.default));
+      const pumpQuoted = custom.filter(t => t.quoteMint.toBase58() !== 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+      scan = { txs: r.seen, trades: r.trades.length, creates: r.creates.length, custom: custom.length, holderReward: r.trades.filter(t => t.holderRewardsBps && !t.holderRewardsBps.isZero()).length, pumpQuoted: pumpQuoted.length };
+    } catch (e) { }
+    return { createV2: !!global.createV2Enabled, holderRewards: !!global.isHolderRewardEnabled, maxCurveDepth: global.maxCurveDepth, fees: exoticFees(feeConfig), scan, solUsd: await solUsd().catch(() => null), at: Date.now() };
   });
 }
 
@@ -428,7 +524,9 @@ async function coin(mintStr) {
     const [bcInfo, mintInfo] = await rpc(c => c.getMultipleAccountsInfo([bondingCurvePda(m), m]));
     if (!bcInfo) throw http(404, 'No pump.fun bonding curve for this mint.');
     const bc = PUMP_SDK.decodeBondingCurve(bcInfo);
-    const cv = curveView(bc, ark && ark.priceUsd, global);
+    const qStr = bc.quoteMint.toBase58();
+    const pm = bc.quoteMint.equals(PublicKey.default) ? { symbol: 'SOL', usd: await solUsd().catch(() => null), main: false } : (await pairMeta([qStr]))[qStr];
+    const cv = curveView(bc, pm.usd, global);
     const prog = mintInfo ? mintInfo.owner : TOKEN_2022_PROGRAM_ID;
     const mi = mintInfo ? safe(() => unpackMint(m, mintInfo, prog)) : null;
     const reg = (await launches().catch(() => [])).find(c => c.mint === mint) || null;
@@ -478,14 +576,14 @@ async function coin(mintStr) {
     const dexImg = p && p.info && typeof p.info.imageUrl === 'string' ? p.info.imageUrl : null;
     return {
       mint, name: base ? base.name : '', symbol: base ? base.symbol : '', uri: base ? base.uri : '', creator: base ? base.creator : null, createdAt: base ? base.t : null, createSig: base ? base.sig : null,
-      viaArk: !!reg, devPct: reg ? reg.devPct : null, creatorPct,
+      viaArk: !!reg, devPct: reg ? reg.devPct : null, creatorPct, pair: { mint: bc.quoteMint.equals(PublicKey.default) ? null : qStr, symbol: pm.symbol, main: !!pm.main, sol: bc.quoteMint.equals(PublicKey.default) },
       image: (md && md.image) || dexImg, description: md && md.description, twitter: md && md.twitter, telegram: md && md.telegram, website: md && md.website,
       curve: cv, ark,
       mintAuthority: mi && mi.mintAuthority ? mi.mintAuthority.toBase58() : null, freezeAuthority: mi && mi.freezeAuthority ? mi.freezeAuthority.toBase58() : null,
       tokenProgram: prog.toBase58(),
       checks: {
-        paired: !!(cv && cv.paired), holders: !!bc.isHolderReward, registry: !!reg,
-        dev: reg ? reg.devPct <= CONFIG.devCapPct + 1e-9 : null, mintAuth: mi ? !mi.mintAuthority : null, freezeAuth: mi ? !mi.freezeAuthority : null,
+        paired: !!(cv && cv.paired), pair: (bc.depth || 0) > 0, holders: !!bc.isHolderReward, registry: !!reg,
+        mintAuth: mi ? !mi.mintAuthority : null, freezeAuth: mi ? !mi.freezeAuthority : null,
       },
       rewards: rw, holders, trades: tr.slice(0, 60),
       market: p ? { priceUsd: +p.priceUsd || null, mcapUsd: +(p.marketCap || p.fdv) || null, vol24: p.volume ? +p.volume.h24 || 0 : null, chg24: p.priceChange ? +p.priceChange.h24 : null, dex: p.dexId, pair: p.pairAddress } : null,
@@ -504,10 +602,17 @@ async function quoter() {
   });
 }
 const SOL = NATIVE_MINT;
-function pathFor(mint, side, via) {
-  const isArk = ARK && mint.equals(ARK);
-  if (side === 'buy') return via === 'ARK' ? [ARK, mint] : isArk ? [SOL, ARK] : [SOL, ARK, mint];
-  return via === 'ARK' ? [mint, ARK] : isArk ? [ARK, SOL] : [mint, ARK, SOL];
+// SOL -> pair -> coin (or straight from the pair). A coin quoted in SOL itself (like $ARK) is one hop from SOL.
+function pathFor(mint, side, via, quote) {
+  if (!quote || quote.equals(PublicKey.default) || quote.equals(NATIVE_MINT)) return side === 'buy' ? [SOL, mint] : [mint, SOL];
+  if (side === 'buy') return via === 'PAIR' ? [quote, mint] : [SOL, quote, mint];
+  return via === 'PAIR' ? [mint, quote] : [mint, quote, SOL];
+}
+async function quoteOf(mint) {
+  const [ci] = await rpc(c => c.getMultipleAccountsInfo([bondingCurvePda(mint)]));
+  if (!ci) throw http(404, 'No pump.fun curve for this coin.');
+  const bc = PUMP_SDK.decodeBondingCurve(ci);
+  return bc.quoteMint;
 }
 async function routeOut({ path, side, amountIn, user }) {
   const hops = await sdkCall(s => s.resolveMultiHopRoute(path, side));
@@ -593,40 +698,35 @@ async function finalize(user, ixs, alts = [], base = 1_000_000) {
 }
 
 /* ---------------- quotes ---------------- */
-async function arkQuote() {
-  if (!ARK) throw http(403, 'Boarding opens when $ARK is live.');
-  return await sdkCall(s => s.resolveQuoteMint(ARK)).catch(e => { throw http(409, friendly(e)); });
-}
-async function devMath(q, arkUnits) {
+async function devMath(q, quoteMint, units) {
   const { global, feeConfig } = await pumpState();
   const pq = q.pumpQuote ? q.pumpQuote.curve : undefined;
-  const tokens = arkUnits.isZero() ? new BN(0) : getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: null, bondingCurve: null, amount: arkUnits, quoteMint: ARK, pumpQuote: pq });
-  const capTokens = new BN(String(Math.floor(CONFIG.devCapPct / 100 * SUPPLY_UNITS)));
-  const maxArk = getBuySolAmountFromTokenAmount({ global, feeConfig, mintSupply: null, bondingCurve: null, amount: capTokens, quoteMint: ARK, pumpQuote: pq });
-  return { tokens, pct: Number(tokens.toString()) / SUPPLY_UNITS * 100, maxArk: toUi(maxArk), seedArk: toUi(q.initialVirtualQuoteReserves) };
+  const tokens = units.isZero() ? new BN(0) : getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: null, bondingCurve: null, amount: units, quoteMint, pumpQuote: pq });
+  return { tokens, pct: Number(tokens.toString()) / SUPPLY_UNITS * 100, seed: toUi(q.initialVirtualQuoteReserves) };
 }
 async function quote(b) {
   const kind = String(b.kind || 'trade');
   const user = b.user ? pk(b.user, 'wallet') : null;
   if (kind === 'launch') {
-    const q = await arkQuote();
-    let arkUi = Math.max(0, Number(b.ark) || 0), arkFromSol = null;
+    const P = await resolvePair(b.pair);
     const sol = Math.max(0, Math.min(100, Number(b.sol) || 0));
+    let pairOut = 0, tokens = 0, pct = 0;
     if (sol > 0) {
-      const { out } = await routeOut({ path: [SOL, ARK], side: 'buy', amountIn: toUnits(sol, 9), user: user || await quoter() });
-      arkFromSol = toUi(out); arkUi = arkFromSol;
+      const { out } = await routeOut({ path: [SOL, P.mint], side: 'buy', amountIn: toUnits(sol, 9), user: user || await quoter() });
+      pairOut = toUi(out);
+      const dm = await devMath(P.q, P.mint, out); tokens = toUi(dm.tokens); pct = dm.pct;
     }
-    const dm = await devMath(q, toUnits(arkUi));
-    const ark = await arkInfo().catch(() => null);
-    return { sol, ark: arkUi, arkFromSol, tokens: toUi(dm.tokens), pct: dm.pct, capPct: CONFIG.devCapPct, overCap: dm.pct > CONFIG.devCapPct + 1e-9, maxArk: dm.maxArk, maxSol: ark && ark.priceSol ? dm.maxArk * ark.priceSol : null, seedArk: dm.seedArk, depth: q.pumpQuote ? q.pumpQuote.depth : null };
+    return { sol, pair: P.mint.toBase58(), main: P.main, pairOut, tokens, pct, maxSol: CONFIG.devMaxSol, overCap: sol > CONFIG.devMaxSol + 1e-9, depth: P.q.pumpQuote ? P.q.pumpQuote.depth : null };
   }
-  const mint = pk(b.mint, 'mint'), side = b.side === 'sell' ? 'sell' : 'buy', via = b.via === 'ARK' ? 'ARK' : 'SOL';
   if (!ARK) throw http(403, 'Trading opens when $ARK is live.');
+  const mint = pk(b.mint, 'mint'), side = b.side === 'sell' ? 'sell' : 'buy', via = b.via === 'PAIR' || b.via === 'ARK' ? 'PAIR' : 'SOL';
   const amount = Math.max(0, Number(b.amount) || 0); if (!amount) throw http(400, 'Enter an amount.');
-  const inDec = side === 'buy' && via === 'SOL' ? 9 : DEC, outDec = side === 'sell' && via === 'SOL' ? 9 : DEC;
-  const path = pathFor(mint, side, via);
-  const signer = user || (side === 'buy' && via === 'SOL' ? await quoter() : null);
-  if (!signer) throw http(400, 'Connect a wallet to quote a sell.');
+  const qm = await quoteOf(mint);
+  const direct = qm.equals(PublicKey.default);
+  const inDec = side === 'buy' && (via === 'SOL' || direct) ? 9 : DEC, outDec = side === 'sell' && (via === 'SOL' || direct) ? 9 : DEC;
+  const path = pathFor(mint, side, via, qm);
+  const signer = user || (side === 'buy' && (via === 'SOL' || direct) ? await quoter() : null);
+  if (!signer) throw http(400, 'Connect a wallet to quote this.');
   const { hops, out } = await routeOut({ path, side, amountIn: toUnits(amount, inDec), user: signer });
   return { in: amount, out: toUi(out, outDec), path: path.map(p => p.toBase58()), venues: hops.map(h => h.venue), exact: !!user };
 }
@@ -649,12 +749,20 @@ async function check(b) {
   const out = [];
   const add = (id, label, status, note) => out.push({ id, label, status, note });
   const name = clean(b.name, 64), symbol = cleanSym(b.symbol), rawSym = String(b.symbol || '').trim();
-  const [{ global, feeConfig }, ark, list] = await Promise.all([pumpState(), arkInfo().catch(() => ({ live: false })), launches().catch(() => [])]);
+  const [{ global, feeConfig }, list] = await Promise.all([pumpState(), launches().catch(() => [])]);
   const fees = exoticFees(feeConfig);
-  // 1. the pair
-  if (!ARK) add('pair', 'Paired to $ARK', 'wait', 'Boarding opens when $ARK is live.');
-  else if (ark.live && ark.pairable) add('pair', 'Paired to $ARK', 'pass', `Your coin's curve is priced in $ARK (depth ${(ark.depth || 0) + 1}).`);
-  else add('pair', 'Paired to $ARK', 'fail', ark.why || '$ARK cannot be paired right now.');
+  // 1. the pair: $ARK unless another pump.fun coin was picked
+  const pairStr = b.pair && b.pair !== ARK_CA ? String(b.pair) : null;
+  if (!ARK) add('pair', 'Pair', 'wait', 'Boarding opens when $ARK is live.');
+  else {
+    try {
+      const m = pairStr ? pk(pairStr, 'pair') : ARK;
+      const [st] = await pairStatus([m]);
+      const lbl = pairStr ? 'Pair' : 'Paired to $ARK';
+      if (st.ok) add('pair', lbl, 'pass', pairStr ? `Priced in ${clean(b.pairSymbol, 16) ? '$' + clean(b.pairSymbol, 16) : 'that coin'} (${st.venue === 'curve' ? 'on its curve' : 'on PumpSwap'}). $ARK stays the main pair.` : `Your coin's curve is priced in $ARK, the main pair.`);
+      else add('pair', lbl, 'fail', st.why);
+    } catch (e) { add('pair', 'Pair', 'fail', e.message); }
+  }
   // 2. holder rewards
   add('rewards', 'Fees to holders', global.isHolderRewardEnabled ? 'pass' : 'fail', global.isHolderRewardEnabled ? `100% of creator fees go to holders${fees ? ` (${(fees.creator / 100).toFixed(2)}% of every trade)` : ''}.` : 'pump.fun has holder rewards switched off right now.');
   // 3. name + ticker
@@ -701,27 +809,23 @@ async function check(b) {
   if (desc.length > 600) add('words', 'Description', 'fail', 'Description is over 600 characters.');
   else if (PROMISE_RE.test(desc + ' ' + name)) add('words', 'Description', 'warn', 'Avoid promising returns.');
   else add('words', 'Description', 'pass', desc ? `${desc.length} characters.` : 'No description. It is optional.');
-  // 9. dev buy cap
-  const devArk = Math.max(0, Number(b.devArk) || 0);
-  if (!devArk) add('dev', `Dev buy ≤ ${CONFIG.devCapPct}%`, 'pass', 'No dev buy.');
-  else if (!ARK) add('dev', `Dev buy ≤ ${CONFIG.devCapPct}%`, 'wait', 'Checked when $ARK is live.');
-  else {
-    try { const q = await arkQuote(); const dm = await devMath(q, toUnits(devArk)); add('dev', `Dev buy ≤ ${CONFIG.devCapPct}%`, dm.pct > CONFIG.devCapPct + 1e-9 ? 'fail' : 'pass', `${fmtNum(devArk)} $ARK buys ${dm.pct.toFixed(2)}% of supply${dm.pct > CONFIG.devCapPct ? ` (max ${fmtNum(dm.maxArk)} $ARK)` : ''}.`); }
-    catch (e) { add('dev', `Dev buy ≤ ${CONFIG.devCapPct}%`, 'warn', friendly(e)); }
-  }
+  // 9. dev buy cap, in SOL
+  const devSol = Math.max(0, Number(b.devSol) || 0);
+  const devLbl = `Dev buy ≤ ${CONFIG.devMaxSol} SOL`;
+  if (!devSol) add('dev', devLbl, 'pass', 'No dev buy.');
+  else if (devSol > CONFIG.devMaxSol + 1e-9) add('dev', devLbl, 'fail', `${devSol} SOL is over the ${CONFIG.devMaxSol} SOL cap.`);
+  else add('dev', devLbl, 'pass', `${devSol} SOL, bought right after the launch through the pair.`);
   // 10. wallet
   if (!b.user) add('wallet', 'Wallet', 'wait', 'Connect a wallet.');
   else {
     const user = pk(b.user, 'wallet');
     const recent = list.filter(c => c.creator === user.toBase58() && Date.now() - c.t < 864e5).length;
-    const need = 0.035 + Math.max(0, Number(b.devSol) || 0);
-    let bal = null, arkBal = null;
+    const need = 0.035 + devSol;
+    let bal = null;
     try { bal = (await rpc(c => c.getBalance(user))) / 1e9; } catch (e) { }
-    if (ARK && devArk) { try { arkBal = await tokenBalance(user, ARK); } catch (e) { } }
     if (recent >= CONFIG.perWallet) add('wallet', 'Wallet', 'fail', `This wallet launched ${recent} coins in the last 24 hours (max ${CONFIG.perWallet}).`);
     else if (bal != null && bal < need) add('wallet', 'Wallet', 'fail', `Has ${bal.toFixed(3)} SOL, needs about ${need.toFixed(3)} SOL.`);
-    else if (arkBal != null && !(Number(b.devSol) > 0) && arkBal < devArk) add('wallet', 'Wallet', 'fail', `Holds ${fmtNum(arkBal)} $ARK, the dev buy needs ${fmtNum(devArk)}.`);
-    else add('wallet', 'Wallet', 'pass', `${bal != null ? bal.toFixed(3) + ' SOL' : 'Connected'}${arkBal != null ? ` · ${fmtNum(arkBal)} $ARK` : ''} · ${recent}/${CONFIG.perWallet} launches today.`);
+    else add('wallet', 'Wallet', 'pass', `${bal != null ? bal.toFixed(3) + ' SOL' : 'Connected'} · ${recent}/${CONFIG.perWallet} launches today.`);
   }
   // 11. pump.fun itself
   add('pump', 'pump.fun open', global.createV2Enabled ? 'pass' : 'fail', global.createV2Enabled ? 'New coins are open on pump.fun.' : 'pump.fun has paused new coins.');
@@ -776,17 +880,6 @@ async function rules(user, symbol) {
   if (recent >= CONFIG.perWallet) throw http(429, `This wallet launched ${recent} coins in the last 24 hours (max ${CONFIG.perWallet}).`);
   if (BIG_TICKERS.has(symbol)) throw http(400, `$${symbol} is a major token's ticker.`);
 }
-async function buildFund(b) {
-  gate();
-  const user = pk(b.user, 'wallet');
-  const sol = Math.max(0.001, Math.min(100, Number(b.sol) || 0));
-  const slip = Math.max(0.5, Math.min(30, Number(b.slippage) || 5)) / 100;
-  const { hops, out } = await routeOut({ path: [SOL, ARK], side: 'buy', amountIn: toUnits(sol, 9), user });
-  const minOut = out.mul(new BN(Math.round((1 - slip) * 10000))).div(new BN(10000));
-  const ixs = await PUMP_SDK.multiHopSwapInstructions({ user, hops, side: 'buy', amountIn: toUnits(sol, 9), minAmountOut: minOut });
-  const f = await finalize(user, ixs, [], 1_400_000);
-  return { ...f, step: 'fund', arkOut: toUi(out), arkMin: toUi(minOut), venues: hops.map(h => h.venue) };
-}
 async function buildLaunch(b) {
   gate();
   const user = pk(b.user, 'wallet'), mint = pk(b.mint, 'mint');
@@ -794,64 +887,37 @@ async function buildLaunch(b) {
   if (!name || !symbol || symbol.length < 2) throw http(400, 'Name and a 2-10 character ticker are required.');
   const uri = clean(b.uri, 200);
   if (!/^https:\/\/\S+$/.test(uri)) throw http(400, 'Upload the picture first.');
-  const slipPct = Math.max(0.5, Math.min(30, Number(b.slippage) || 5));
-  const via = b.devVia === 'ARK' ? 'ARK' : 'SOL';
   const dev = Math.max(0, Number(b.dev) || 0);
+  if (dev > CONFIG.devMaxSol + 1e-9) throw http(400, `The dev buy cap is ${CONFIG.devMaxSol} SOL.`);
   const { global } = await pumpState();
   if (global.createV2Enabled === false) throw http(503, 'pump.fun has paused new coins right now.');
   if (!global.isHolderRewardEnabled) throw http(503, 'pump.fun has holder rewards switched off right now.');
   await rules(user, symbol);
-  const q = await arkQuote();
-  // the dev buy must fit under the cap before anything is created
-  let devArk = 0;
-  if (dev > 0) {
-    if (via === 'SOL') { const { out } = await routeOut({ path: [SOL, ARK], side: 'buy', amountIn: toUnits(dev, 9), user }); devArk = toUi(out); }
-    else { const have = await tokenBalance(user, ARK).catch(() => 0); if (have + 1e-9 < dev) throw http(400, `The wallet holds ${fmtNum(have)} $ARK, the dev buy needs ${fmtNum(dev)}.`); devArk = dev; }
-    const dm = await devMath(q, toUnits(devArk));
-    if (dm.pct > CONFIG.devCapPct + 1e-9) throw http(400, `That dev buy is ${dm.pct.toFixed(2)}% of supply. The cap is ${CONFIG.devCapPct}% (about ${fmtNum(dm.maxArk)} $ARK).`);
-  }
+  const P = await resolvePair(b.pair && b.pair !== ARK_CA ? b.pair : null);
   const extra = [pairingMemo(symbol), registryTag(user)];
-  const base = { mint, name, symbol, uri, creator: user, user, mayhemMode: false, quoteMint: ARK, quoteTokenProgram: q.quoteTokenProgram, holderReward: true, pumpQuote: q.pumpQuote ? q.pumpQuote.accounts : undefined };
-  let plan = [await PUMP_SDK.createV2Instruction(base), ...extra], alts = [], followUp = null, dev1 = null;
-  if (dev > 0 && via === 'ARK') {
-    // paid in $ARK: try create + first buy in one transaction (needs a lookup table to fit)
-    const { feeConfig } = await pumpState();
-    const qa = toUnits(dev / (1 + slipPct / 100));
-    const dm = await devMath(q, qa);
-    const cb = [...await PUMP_SDK.createV2AndBuyV2Instructions({ global, ...base, amount: dm.tokens, quoteAmount: qa, slippage: slipPct }), ...extra];
-    void feeConfig;
-    const { blockhash } = await rpc(c => c.getLatestBlockhash('confirmed'));
-    const price = await priorityFee();
-    if (tryCompile(user, cb, 1_000_000, price, blockhash)) plan = cb;
-    else { const found = await pickAlts(cb, user, price, blockhash); if (found) { plan = cb; alts = found; } }
-    if (plan === cb) dev1 = { ark: dev, tokens: toUi(dm.tokens), pct: dm.pct };
-  }
-  if (dev > 0 && !dev1) followUp = { via, amount: dev };
-  const f = await finalize(user, plan, alts, 1_000_000);
-  return { ...f, step: 'launch', memo: `ark:v1:${symbol}`, registry: REGISTRY.toBase58(), dev: dev1, followUp, alts: alts.map(t => t.key.toBase58()) };
+  const base = { mint, name, symbol, uri, creator: user, user, mayhemMode: false, quoteMint: P.mint, quoteTokenProgram: P.q.quoteTokenProgram, holderReward: true, pumpQuote: P.q.pumpQuote ? P.q.pumpQuote.accounts : undefined };
+  const plan = [await PUMP_SDK.createV2Instruction(base), ...extra];
+  const f = await finalize(user, plan, [], 1_000_000);
+  return { ...f, step: 'launch', pair: P.mint.toBase58(), main: P.main, memo: `ark:v1:${symbol}`, registry: REGISTRY.toBase58(), followUp: dev > 0 ? { via: 'SOL', amount: dev } : null };
 }
-// the first buy right after the create: SOL -> $ARK -> coin, or $ARK -> coin, through pump.fun's multi-hop swap
+// the first buy right after the create: SOL -> pair -> coin, through pump.fun's multi-hop swap
 async function buildDevBuy(b) {
   gate();
   const user = pk(b.user, 'wallet'), mint = pk(b.mint, 'mint');
   const slip = Math.max(0.5, Math.min(30, Number(b.slippage) || 5)) / 100;
-  const via = b.via === 'ARK' ? 'ARK' : 'SOL';
-  let amount = Math.max(0, Number(b.amount) || 0);
-  if (via === 'ARK') { const have = await tokenBalance(user, ARK).catch(() => 0); amount = Math.min(amount, have); }
+  const amount = Math.max(0, Math.min(CONFIG.devMaxSol, Number(b.amount) || 0));
   if (!(amount > 0)) throw http(400, 'Nothing to buy with.');
-  const path = via === 'SOL' ? [SOL, ARK, mint] : [ARK, mint];
-  const amountIn = toUnits(amount, via === 'SOL' ? 9 : DEC);
+  const qm = await quoteOf(mint);
+  const path = pathFor(mint, 'buy', 'SOL', qm);
+  const amountIn = toUnits(amount, 9);
   const { hops, out } = await routeOut({ path, side: 'buy', amountIn, user });
-  const pct = Number(out.toString()) / SUPPLY_UNITS * 100;
-  if (pct > CONFIG.devCapPct + 1e-9) throw http(400, `That first buy would be ${pct.toFixed(2)}% of supply. The cap is ${CONFIG.devCapPct}%.`);
   const minOut = out.mul(new BN(Math.round((1 - slip) * 10000))).div(new BN(10000));
   const ixs = await PUMP_SDK.multiHopSwapInstructions({ user, hops, side: 'buy', amountIn, minAmountOut: minOut });
   const f = await finalize(user, ixs, [], 1_400_000);
-  return { ...f, step: 'devbuy', dev: { via, amount, tokens: toUi(out), pct } };
+  return { ...f, step: 'devbuy', dev: { sol: amount, tokens: toUi(out), pct: Number(out.toString()) / SUPPLY_UNITS * 100 } };
 }
 async function build(b) {
   const step = String(b.step || 'launch');
-  if (step === 'fund') return await buildFund(b);
   if (step === 'devbuy') return await buildDevBuy(b);
   return await buildLaunch(b);
 }
@@ -860,11 +926,12 @@ async function build(b) {
 async function trade(b) {
   if (!ARK) throw http(403, 'Trading opens when $ARK is live.');
   const user = pk(b.user, 'wallet'), mint = pk(b.mint, 'mint');
-  const side = b.side === 'sell' ? 'sell' : 'buy', via = b.via === 'ARK' ? 'ARK' : 'SOL';
+  const side = b.side === 'sell' ? 'sell' : 'buy', via = b.via === 'PAIR' || b.via === 'ARK' ? 'PAIR' : 'SOL';
   const amount = Math.max(0, Number(b.amount) || 0); if (!amount) throw http(400, 'Enter an amount.');
   const slip = Math.max(0.5, Math.min(30, Number(b.slippage) || 5)) / 100;
-  const inDec = side === 'buy' && via === 'SOL' ? 9 : DEC, outDec = side === 'sell' && via === 'SOL' ? 9 : DEC;
-  const path = pathFor(mint, side, via);
+  const qm = await quoteOf(mint), direct = qm.equals(PublicKey.default);
+  const inDec = side === 'buy' && (via === 'SOL' || direct) ? 9 : DEC, outDec = side === 'sell' && (via === 'SOL' || direct) ? 9 : DEC;
+  const path = pathFor(mint, side, via, qm);
   const amountIn = toUnits(amount, inDec);
   const { hops, out } = await routeOut({ path, side, amountIn, user });
   const minOut = out.mul(new BN(Math.round((1 - slip) * 10000))).div(new BN(10000));
@@ -893,7 +960,7 @@ async function status(sig) {
 }
 
 /* ---------------- image proxy (canvas-safe pictures) ---------------- */
-const IMG_HOSTS = /^https:\/\/([a-z0-9-]+\.)*(ipfs\.io|mypinata\.cloud|pinata\.cloud|cf-ipfs\.com|cloudflare-ipfs\.com|dweb\.link|nftstorage\.link|w3s\.link|arweave\.net|irys\.xyz|pump\.fun|dexscreener\.com|coingecko\.com)\//i;
+const IMG_HOSTS = /^https:\/\/([a-z0-9-]+\.)*(ipfs\.io|mypinata\.cloud|pinata\.cloud|cf-ipfs\.com|cloudflare-ipfs\.com|dweb\.link|nftstorage\.link|w3s\.link|arweave\.net|irys\.xyz|pump\.fun|dexscreener\.com|coingecko\.com|geckoterminal\.com|githubusercontent\.com)\//i;
 async function img(req, res, u) {
   if (!IMG_HOSTS.test(u || '')) { res.status(400).send('bad host'); return; }
   const r = await timedFetch(8000)(u, { headers: { accept: 'image/*', 'user-agent': 'Mozilla/5.0 (ark)' } });
@@ -1039,12 +1106,20 @@ module.exports = async (req, res) => {
       const { global, feeConfig } = await pumpState().catch(() => ({}));
       return send(res, 200, {
         ok: true, ca: CONFIG.ca, x: CONFIG.x, telegram: CONFIG.telegram, launches: CONFIG.launches, registry: REGISTRY.toBase58(), memo: MEMO.toBase58(),
-        devCapPct: CONFIG.devCapPct, perWallet: CONFIG.perWallet, perTicker: CONFIG.perTicker,
+        devMaxSol: CONFIG.devMaxSol, perWallet: CONFIG.perWallet, perTicker: CONFIG.perTicker,
         pump: global ? { createV2: !!global.createV2Enabled, holderRewards: !!global.isHolderRewardEnabled, maxCurveDepth: global.maxCurveDepth } : null,
         fees: exoticFees(feeConfig), supply: 1e9,
       }, 'public, s-maxage=30, stale-while-revalidate=120');
     }
     if (path === 'ark') return send(res, 200, { ok: true, ...(await arkInfo()) }, 'public, s-maxage=10, stale-while-revalidate=30');
+    if (path === 'pairs') return send(res, 200, { ok: true, ...(await pairs()) }, 'public, s-maxage=300, stale-while-revalidate=900');
+    if (path === 'pair') {
+      const m = pk(q.get('m'), 'mint');
+      const [[st], dex] = await Promise.all([pairStatus([m]), dexFor([m.toBase58()]).catch(() => ({}))]);
+      const d = dex[m.toBase58()];
+      return send(res, 200, { ok: true, mint: m.toBase58(), pairable: st.ok, why: st.why || '', venue: st.venue || null, main: !!(ARK && m.equals(ARK)), symbol: d && d.baseToken ? clean(d.baseToken.symbol, 16) : '', name: d && d.baseToken ? clean(d.baseToken.name, 40) : '', image: d && d.info && d.info.imageUrl || null, mcapUsd: d ? +(d.marketCap || d.fdv) || null : null }, 'public, s-maxage=60');
+    }
+    if (path === 'live') return send(res, 200, { ok: true, ...(await liveState()) }, 'public, s-maxage=60, stale-while-revalidate=120');
     if (path === 'coins') return send(res, 200, { ok: true, ...(await coins()) }, 'public, s-maxage=15, stale-while-revalidate=45');
     if (path === 'coin') return send(res, 200, { ok: true, ...(await coin(q.get('m'))) }, 'public, s-maxage=10, stale-while-revalidate=30');
     if (path === 'status') return send(res, 200, { ok: true, ...(await status(q.get('sig'))) });
