@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARK · Launch</title>
+<meta name="description" content="Launch a pump.fun coin paired to $ARK, with 100% of creator fees going to holders.">
+<meta name="theme-color" content="#08080a">
+<link rel="icon" href="/img/icon-32.png"><link rel="apple-touch-icon" href="/img/icon-180.png">
+<meta property="og:title" content="ARK · Launch"><meta property="og:description" content="Every coin boards in pairs."><meta property="og:image" content="https://ark-eta-neon.vercel.app/img/og.png">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://ark-eta-neon.vercel.app/img/og.png">
+<link rel="preload" href="/fonts/inter-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/css/ark.css?v=1">
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="/" aria-label="ARK home"><span data-amark></span>ARK</a>
+  <nav class="links"><a href="/board" data-page="board">Board</a><a href="/launch" data-page="launch">Launch</a><a href="/#ark">$ARK</a><a href="/#how">How it works</a><a href="/#faq">FAQ</a></nav>
+  <div class="nav-r"><button class="ca soon" id="caChip">CA <b>soon</b></button><button class="btn wbtn" id="wBtn">Connect</button><button class="burger" aria-label="Menu"><span></span></button></div>
+</div></header>
+<main>
+<section class="lp">
+  <div class="wrap">
+    <div class="sec-h" style="margin-bottom:28px"><span class="kick" id="lpKick">Boarding</span><h1 class="h2">Launch a coin.</h1><p id="lpSub">Paired to $ARK, fees to holders, checked at the gangway. Your wallet signs, nothing else touches your keys.</p></div>
+    <div class="lp-grid">
+      <form class="form" id="form" autocomplete="off" onsubmit="return false">
+        <div class="card fsec">
+          <div class="fsec-h"><span class="n">01</span><b>Picture</b><span>PNG · JPG · GIF · WEBP</span></div>
+          <label class="drop" id="drop"><div class="pv" id="pv">512×512</div><div><b>Drop an image or click</b><span>Square works best. It becomes the coin's picture on pump.fun.</span></div><input type="file" id="file" accept="image/png,image/jpeg,image/gif,image/webp" aria-label="Coin picture"></label>
+        </div>
+        <div class="card fsec">
+          <div class="fsec-h"><span class="n">02</span><b>Name and ticker</b></div>
+          <div class="two"><div class="field"><label for="fName">Name</label><input class="inp" id="fName" maxlength="32" placeholder="Noah's Pigeon"></div><div class="field"><label for="fSym">Ticker</label><input class="inp" id="fSym" maxlength="10" placeholder="PIGEON"></div></div>
+        </div>
+        <div class="card fsec">
+          <div class="fsec-h"><span class="n">03</span><b>Story and links</b><span>optional</span></div>
+          <div class="field"><label for="fDesc">Description</label><textarea class="inp" id="fDesc" maxlength="600" placeholder="One or two lines about your coin."></textarea></div>
+          <div class="three"><div class="field"><label for="fX">X</label><input class="inp" id="fX" placeholder="https://x.com/…"></div><div class="field"><label for="fTg">Telegram</label><input class="inp" id="fTg" placeholder="https://t.me/…"></div><div class="field"><label for="fWeb">Website</label><input class="inp" id="fWeb" placeholder="https://…"></div></div>
+        </div>
+        <div class="card fsec">
+          <div class="fsec-h"><span class="n">04</span><b>Dev buy</b><span id="capLbl">optional · max 3% of supply</span></div>
+          <div class="seg" id="devUnit"><button class="on" data-u="SOL">Pay in SOL</button><button data-u="ARK">Pay in $ARK</button></div>
+          <div class="inrow"><input id="fDev" inputmode="decimal" placeholder="0" aria-label="Dev buy amount"><span class="unit" id="devUnitLbl">SOL</span></div>
+          <div class="meter"><div class="meter-row"><span id="devPct">0% of supply</span><span id="devArk">—</span></div><div class="meter-bar" id="devBar"><i style="width:0"></i></div></div>
+          <span class="mu" style="font-size:13px" id="devNote">Paying in SOL buys $ARK first (one extra signature). The first buy itself happens inside the launch transaction.</span>
+        </div>
+        <div class="card fsec">
+          <div class="fsec-h"><span class="n">05</span><b>Contract address</b></div>
+          <label class="toggle"><span><b style="display:block;font-size:15px">End the address in "ark"</b><span class="mu" style="font-size:13px">Your browser searches for a matching key on your own device. A few seconds.</span></span><input type="checkbox" id="vanity" checked><i></i></label>
+          <div class="mono mu" style="font-size:12.5px" id="vanityState"></div>
+        </div>
+      </form>
+      <aside class="lp-side">
+        <div class="pass" id="pass">
+          <div class="pass-top"><span class="brand"><span data-amark></span>ARK</span><span>BOARDING PASS</span></div>
+          <div class="pass-mid"><div class="pic" id="ppPic"></div><div><b id="ppSym">$TICKER</b><span id="ppName">Your coin</span></div></div>
+          <div class="pass-grid"><div><small>PAIRED TO</small><b>$ARK</b></div><div><small>CREATOR FEES</small><b>100% HOLDERS</b></div><div><small>DEV BUY</small><b id="ppDev">0%</b></div></div>
+          <div class="pass-grid"><div><small>GATE</small><b>pump.fun</b></div><div><small>DEPTH</small><b>1</b></div><div><small>SEAT</small><b id="ppSeat">—</b></div></div>
+          <div class="pass-bot"><span id="ppCa">CA ……ark</span><div class="barcode"></div></div>
+          <div class="stamp" id="ppStamp">ABOARD</div>
+        </div>
+        <div class="card pad"><div class="fsec-h" style="margin-bottom:6px"><b>The gangway</b><span id="gState">waiting</span></div><ul class="checks" id="checks"></ul></div>
+        <div class="card pad grid" style="gap:16px"><div class="sum" id="sum"></div><button class="btn gold lg block" id="go">Launch</button><ul class="log" id="log" hidden></ul><div id="done" hidden></div></div>
+      </aside>
+    </div>
+  </div>
+</section>
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <div class="big-word" aria-hidden="true">ARK</div>
+    <p class="disc">ARK is an independent interface for pump.fun's public programs and is not affiliated with pump.fun. Nothing here is financial advice. Memecoins can go to zero.</p>
+  </div>
+</footer>
+<script src="/vendor/solana-lite.js" defer></script>
+<script type="module" src="/js/launch.js?v=1"></script>
+</body>
+</html>
