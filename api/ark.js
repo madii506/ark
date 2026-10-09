@@ -48,7 +48,7 @@ const okKey = s => { try { return s ? new PublicKey(s).toBase58() : ''; } catch 
 const num = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
 const MEMO = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 const REGISTRY = PublicKey.findProgramAddressSync([Buffer.from('ark-registry-v1')], MEMO)[0];
-const ARK_CA = okKey(E('ARK_CA') || '9RjWQBrFkK7xeT5hT6qvAqKMQaLsZp4Pov4HNZNipump');
+const ARK_CA = okKey(E('ARK_CA'));
 const ARK = ARK_CA ? new PublicKey(ARK_CA) : null;
 const CONFIG = {
   ca: ARK_CA,
