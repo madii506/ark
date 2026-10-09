@@ -66,7 +66,7 @@ pe.addEventListener('pointermove', e => { const r = pe.getBoundingClientRect(), 
 pe.addEventListener('pointerleave', () => { pe.style.setProperty('--rx', '0deg'); pe.style.setProperty('--ry', '0deg'); });
 
 /* ---------- dev buy ---------- */
-$$('#devUnit button').forEach(b => b.onclick = () => { S.unit = b.dataset.u; $$('#devUnit button').forEach(x => x.classList.toggle('on', x === b)); $('#devUnitLbl').textContent = S.unit === 'SOL' ? 'SOL' : '$ARK'; $('#devNote').textContent = S.unit === 'SOL' ? 'Paying in SOL buys $ARK first (one extra signature). The first buy itself happens inside the launch transaction.' : 'Paid from the $ARK already in your wallet, inside the launch transaction.'; devQuote(); });
+$$('#devUnit button').forEach(b => b.onclick = () => { S.unit = b.dataset.u; $$('#devUnit button').forEach(x => x.classList.toggle('on', x === b)); $('#devUnitLbl').textContent = S.unit === 'SOL' ? 'SOL' : '$ARK'; $('#devNote').textContent = S.unit === 'SOL' ? 'Paid in SOL: right after the launch, one swap goes SOL → $ARK → your coin.' : 'Paid from the $ARK already in your wallet.'; devQuote(); });
 let dTm = 0, dSeq = 0;
 function devQuote() {
   S.dev = Math.max(0, parseFloat($('#fDev').value) || 0); S.quote = null; meter(); sum(); pass();
@@ -175,26 +175,18 @@ async function launch() {
     st = log('Uploading the picture and metadata to pump.fun');
     const up = await api('ipfs', { image: S.img.url, name: f.name, symbol: f.symbol, description: f.description, twitter: f.twitter, telegram: f.telegram, website: f.website });
     ok(st);
-    let devArk = 0;
-    if (S.dev > 0 && S.unit === 'SOL') {
-      st = log(`Building ${S.dev} SOL → $ARK for your first buy`);
-      const fund = await api('build', { step: 'fund', user, sol: S.dev, slippage: 5 }); ok(st, `≈ ${num(fund.arkOut)} $ARK`);
-      st = log('Sign the $ARK buy in your wallet');
-      const s1 = await sendSigned(await signWith(fund.tx)); ok(st, link(s1));
-      st = log('Confirming'); await waitFor(s1); ok(st);
-      devArk = fund.arkMin;
-    } else if (S.dev > 0) devArk = S.dev;
     const L = window.SolanaLite;
     const kp = S.mintSecret ? L.Keypair.fromSecretKey(S.mintSecret) : L.Keypair.generate();
     const mint = kp.publicKey.toBase58();
     st = log('Building the launch (simulated on-chain first)');
-    const b = await api('build', { step: 'launch', user, mint, name: f.name, symbol: f.symbol, uri: up.uri, ark: devArk, slippage: 5 });
+    const b = await api('build', { step: 'launch', user, mint, name: f.name, symbol: f.symbol, uri: up.uri, dev: S.dev, devVia: S.unit, slippage: 5 });
     ok(st, `${(b.units || 0).toLocaleString()} CU`);
     st = log('Sign the launch in your wallet');
     const sig = await sendSigned(await signWith(b.tx, kp)); ok(st, link(sig));
     st = log('Confirming on Solana'); await waitFor(sig); ok(st);
-    if (b.followUp === 'devbuy' && b.followArk > 0) {
-      st = log('Building your first buy'); const d = await api('build', { step: 'devbuy', user, mint, ark: b.followArk, slippage: 5 }); ok(st);
+    if (b.followUp) {
+      st = log(`Building your first buy (${b.followUp.via === 'SOL' ? 'SOL → $ARK → $' + f.symbol : '$ARK → $' + f.symbol})`);
+      const d = await api('build', { step: 'devbuy', user, mint, via: b.followUp.via, amount: b.followUp.amount, slippage: 5 }); ok(st, `${d.dev.pct.toFixed(2)}% of supply`);
       st = log('Sign the first buy'); const s2 = await sendSigned(await signWith(d.tx)); ok(st, link(s2));
       st = log('Confirming'); await waitFor(s2); ok(st);
     }
