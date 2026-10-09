@@ -178,8 +178,8 @@ export async function chrome(page) {
   const cfg = await loadConfig();
   const ca = $('#caChip');
   if (ca) {
-    if (cfg.ca) { ca.classList.remove('soon'); ca.innerHTML = `CA <b>${short(cfg.ca)}</b><i>COPY</i>`; ca.onclick = () => copy(cfg.ca, 'Contract address copied'); }
-    else { ca.classList.add('soon'); ca.innerHTML = `CA <b>soon</b>`; }
+    if (cfg.ca) { ca.hidden = false; ca.innerHTML = `CA <b>${short(cfg.ca)}</b><i>COPY</i>`; ca.onclick = () => copy(cfg.ca, 'Contract address copied'); }
+    else ca.hidden = true;
   }
   $$('[data-x-link]').forEach(a => { if (cfg.x) { a.href = cfg.x; a.hidden = false; } else a.hidden = true; });
   $$('[data-pump-link]').forEach(a => { if (cfg.ca) { a.href = 'https://pump.fun/coin/' + cfg.ca; a.hidden = false; } else a.hidden = true; });

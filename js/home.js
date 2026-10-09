@@ -38,7 +38,7 @@ function renderArk() {
   const p = a.live && a.progress != null ? a.progress : 0;
   $('#arkMain').innerHTML = `
     <span class="kick">Contract</span>
-    <div class="ca-big" id="arkCa">${a.live ? esc(a.ca) : '<span class="mu">Revealed at launch</span>'}${a.live ? '<i>COPY</i>' : ''}</div>
+    <div class="ca-big" id="arkCa">${a.live ? esc(a.ca) + '<i>COPY</i>' : '<span class="mu scan">Contract address</span>'}</div>
     <div class="stat-row">
       <div class="stat"><small>Price</small><b>${a.live ? usd(a.priceUsd) : '—'}</b></div>
       <div class="stat"><small>Market cap</small><b>${a.live ? usd(a.mcapUsd) : '—'}</b></div>
@@ -49,7 +49,7 @@ function renderArk() {
       <div class="grid" style="gap:10px;flex:1;min-width:200px">
         <b style="font-size:18px">${!a.live ? 'Pre-launch' : a.venue === 'pumpswap' ? 'Trading on PumpSwap' : 'On its pump.fun curve'}</b>
         <span class="mu" style="font-size:14px">${!a.live ? 'The contract address appears here the moment $ARK is live. Boarding opens with it.' : a.pairable ? 'Accepting new pairs: every coin launched now is priced in $ARK.' : esc(a.why || 'Not accepting pairs right now.')}</span>
-        <div class="badges">${a.live ? `<span class="tag ${a.pairable ? 'ok' : 'bad'}">${a.pairable ? '● boarding open' : '● boarding paused'}</span><a class="tag" href="https://pump.fun/coin/${esc(a.ca)}" target="_blank" rel="noopener">pump.fun ↗</a><a class="tag" href="https://dexscreener.com/solana/${esc(a.ca)}" target="_blank" rel="noopener">Dexscreener ↗</a>` : '<span class="tag gold">● soon</span>'}${cfg.x ? `<a class="tag" href="${esc(cfg.x)}" target="_blank" rel="noopener">X ↗</a>` : ''}</div>
+        <div class="badges">${a.live ? `<span class="tag ${a.pairable ? 'ok' : 'bad'}">${a.pairable ? '● boarding open' : '● boarding paused'}</span><a class="tag" href="https://pump.fun/coin/${esc(a.ca)}" target="_blank" rel="noopener">pump.fun ↗</a><a class="tag" href="https://dexscreener.com/solana/${esc(a.ca)}" target="_blank" rel="noopener">Dexscreener ↗</a>` : ''}${cfg.x ? `<a class="tag" href="${esc(cfg.x)}" target="_blank" rel="noopener">X ↗</a>` : ''}</div>
       </div>
     </div>`;
   const ca = $('#arkCa'); if (a.live && ca) ca.onclick = () => copy(a.ca, 'Contract address copied');
@@ -111,7 +111,7 @@ const GANG = [
   ['No promises', 'Descriptions that promise returns get flagged before launch.', 'TEXT'],
   ['Launch pace', `At most ${cfg.perWallet || 3} launches per wallet per day.`, 'REGISTRY'],
 ];
-$('#gang').innerHTML = GANG.map((g, i) => `<div class="card" data-r data-d="${i % 3}"><span class="n">${String(i + 1).padStart(2, '0')}</span><b>${esc(g[0])}</b><p>${esc(g[1])}</p><span class="chain">${g[2]}</span></div>`).join('');
+$('#gang').innerHTML = GANG.map((g, i) => `<div class="card"><span class="n">${String(i + 1).padStart(2, '0')}</span><b>${esc(g[0])}</b><p>${esc(g[1])}</p><span class="chain">${g[2]}</span></div>`).join('');
 watch();
 
 /* ---------- route simulator ---------- */

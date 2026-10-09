@@ -135,7 +135,9 @@ async function runChecks() {
   try {
     const r = await api('check', body); if (my !== cSeq) return;
     S.checks = r;
-    $('#checks').innerHTML = r.checks.map(c => `<li class="ck ${c.status}"><span class="ic">${ICON[c.status] || ''}</span><div><b>${esc(c.label)}</b><span>${esc(c.note)}</span></div></li>`).join('');
+    const was = S.prevChecks || {};
+    $('#checks').innerHTML = r.checks.map((c, i) => `<li class="ck ${c.status}" style="animation:rise .45s var(--ease) ${i * 40}ms both"><span class="ic${was[c.id] !== c.status ? ' pop' : ''}">${ICON[c.status] || ''}</span><div><b>${esc(c.label)}</b><span>${esc(c.note)}</span></div></li>`).join('');
+    S.prevChecks = Object.fromEntries(r.checks.map(c => [c.id, c.status]));
     const fails = r.checks.filter(c => c.status === 'fail').length, warns = r.checks.filter(c => c.status === 'warn').length;
     $('#gState').textContent = fails ? `${fails} to fix` : warns ? `clear · ${warns} note${warns > 1 ? 's' : ''}` : r.ok ? 'all clear' : 'waiting';
   } catch (e) { if (my === cSeq) $('#gState').textContent = 'could not check: ' + e.message; }

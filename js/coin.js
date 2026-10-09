@@ -62,8 +62,10 @@ function trades(d) {
   chart(t.slice().sort((a, b) => a.t - b.t));
 }
 /* price chart from on-chain trades */
-let CH = null;
-function chart(pts) {
+let CH = null, drawn = false;
+function chart(pts, prog) {
+  if (!drawn && prog == null && pts.length > 1) { drawn = true; const t0 = performance.now(); const f = t => { const k = Math.min(1, (t - t0) / 1200); chart(pts, 1 - Math.pow(1 - k, 3)); if (k < 1) requestAnimationFrame(f); }; requestAnimationFrame(f); return; }
+  prog = prog == null ? 1 : prog;
   const cv = $('#chartCv'), box = $('#chart'), tip = $('#tip');
   const r = box.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2);
   cv.width = r.width * dpr; cv.height = r.height * dpr;
@@ -74,10 +76,12 @@ function chart(pts) {
   const X = t => 8 + (r.width - 16) * ((t - t0) / Math.max(1, t1 - t0)), Y = p => 14 + (r.height - 40) * (1 - (p - (lo - pad)) / ((hi + pad) - (lo - pad)));
   x.strokeStyle = 'rgba(255,255,255,.05)'; x.lineWidth = 1;
   for (let i = 0; i < 4; i++) { const yy = 14 + (r.height - 40) * i / 3; x.beginPath(); x.moveTo(0, yy); x.lineTo(r.width, yy); x.stroke(); }
+  x.save(); x.beginPath(); x.rect(0, 0, r.width * prog, r.height); x.clip();
   const g = x.createLinearGradient(0, 0, 0, r.height); g.addColorStop(0, 'rgba(216,179,106,.32)'); g.addColorStop(1, 'rgba(216,179,106,0)');
   x.beginPath(); pts.forEach((p, i) => (i ? x.lineTo(X(p.t), Y(p.price)) : x.moveTo(X(p.t), Y(p.price)))); x.lineTo(X(t1), r.height); x.lineTo(X(t0), r.height); x.closePath(); x.fillStyle = g; x.fill();
   x.beginPath(); pts.forEach((p, i) => (i ? x.lineTo(X(p.t), Y(p.price)) : x.moveTo(X(p.t), Y(p.price)))); x.strokeStyle = '#e9c97f'; x.lineWidth = 2; x.stroke();
   pts.forEach(p => { x.beginPath(); x.arc(X(p.t), Y(p.price), 2.2, 0, 6.283); x.fillStyle = p.buy ? '#7fe0a6' : '#ff7a6e'; x.fill(); });
+  x.restore();
   x.fillStyle = '#6d6963'; x.font = '500 11px JBM'; x.textAlign = 'left'; x.fillText(sig(hi) + ' $ARK', 8, 12); x.fillText(sig(lo) + ' $ARK', 8, r.height - 6);
   CH = { pts, X, Y };
   box.onpointermove = e => {

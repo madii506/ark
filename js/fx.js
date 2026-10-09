@@ -106,5 +106,130 @@ export function fx() {
     c.style.setProperty('--gx', (e.clientX - r.left).toFixed(0) + 'px'); c.style.setProperty('--gy', (e.clientY - r.top).toFixed(0) + 'px');
   }, { passive: true });
   requestAnimationFrame(() => document.documentElement.classList.add('ready'));
+  setTimeout(() => motion(), 0);
 }
 export const reduced = RM;
+
+/* ================= motion pass ================= */
+// headings: split into words that rise out of a mask
+export function split(root = document) {
+  root.querySelectorAll('.h2:not(.splitw), [data-split]:not(.splitw)').forEach(el => {
+    let i = 0;
+    const walk = (node, gold) => {
+      [...node.childNodes].forEach(n => {
+        if (n.nodeType === 3) {
+          const parts = n.textContent.split(/(\s+)/); const frag = document.createDocumentFragment();
+          parts.forEach(p => {
+            if (!p) return;
+            if (/^\s+$/.test(p)) { frag.appendChild(document.createTextNode(p)); return; }
+            const w = document.createElement('span'); w.className = 'w';
+            const inner = document.createElement('span'); inner.textContent = p; inner.style.setProperty('--i', i++);
+            if (gold) inner.className = 'gold-w';
+            w.appendChild(inner); frag.appendChild(w);
+          });
+          n.replaceWith(frag);
+        } else if (n.nodeType === 1 && n.tagName !== 'BR') {
+          const g = gold || n.classList.contains('gold');
+          if (n.classList.contains('gold')) { n.classList.remove('gold'); }
+          walk(n, g);
+        }
+      });
+    };
+    walk(el, false);
+    el.classList.add('splitw');
+    if (!el.hasAttribute('data-r') && !el.closest('[data-r]')) { el.setAttribute('data-r', 'fade'); }
+  });
+}
+// kicker labels: letters scramble into place when they appear
+const GLY = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$·';
+export function scrambleText(el, ms = 700) {
+  if (RM || el.dataset.scr) return; el.dataset.scr = 1;
+  const nodes = []; const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let n; while ((n = tw.nextNode())) if (n.textContent.trim()) nodes.push([n, n.textContent]);
+  const t0 = performance.now();
+  const step = t => {
+    const k = Math.min(1, (t - t0) / ms);
+    nodes.forEach(([node, fin]) => { node.textContent = [...fin].map((c, i) => (c === ' ' || c === ' ' || k > (i + 1) / fin.length * 0.8 + 0.2 ? c : GLY[(Math.random() * GLY.length) | 0])).join(''); });
+    if (k < 1) requestAnimationFrame(step); else nodes.forEach(([node, fin]) => { node.textContent = fin; });
+  };
+  requestAnimationFrame(step);
+}
+function kicks() {
+  document.querySelectorAll('.kick').forEach(k => {
+    const host = k.closest('[data-r]');
+    if (!host) { setTimeout(() => scrambleText(k, 900), 250); return; }
+    host.addEventListener('shown', () => scrambleText(k), { once: true });
+  });
+}
+// give staggered children their order
+export function stagger(root = document) {
+  root.querySelectorAll('[data-stagger]').forEach(g => { [...g.children].forEach((c, i) => c.style.setProperty('--i', i)); if (!g.hasAttribute('data-r')) { g.setAttribute('data-r', 'fade'); pending.add(g); } });
+  kick();
+}
+// scroll velocity, shared by anything that wants to react to it
+export const vel = { v: 0 };
+let vy = scrollY, vt = performance.now();
+function velFrame() {
+  const t = performance.now(), dy = scrollY - vy, dt = Math.max(16, t - vt);
+  vel.v += ((dy / dt) * 16 - vel.v) * 0.2; vy = scrollY; vt = t;
+  vel.v *= 0.92;
+  requestAnimationFrame(velFrame);
+}
+// big text bands slide with the scroll, rows in opposite directions
+function bands() {
+  document.querySelectorAll('[data-band]').forEach(b => {
+    const rows = [...b.querySelectorAll('.band-row')];
+    rows.forEach(r => { r.innerHTML = r.innerHTML + r.innerHTML + r.innerHTML; });
+    let x = 0;
+    onFrame((y, vh) => {
+      const r = b.getBoundingClientRect(); if (r.bottom < -50 || r.top > vh + 50) return;
+      const base = (vh - r.top) * 0.45;
+      rows.forEach((row, i) => { const w = row.scrollWidth / 3; const dir = i % 2 ? 1 : -1; let off = (base * dir) % w; if (dir < 0) off -= w * 0.15; else off -= w * 0.85; row.style.transform = `translate3d(${off.toFixed(1)}px,0,0) skewX(${Math.max(-8, Math.min(8, vel.v * -0.35)).toFixed(2)}deg)`; });
+    });
+    void x;
+  });
+}
+// the footer word tightens and catches the light as it arrives
+function bigWord() {
+  const big = document.querySelector('.big-word'); if (!big || RM) return;
+  onFrame((y, vh) => {
+    const r = big.getBoundingClientRect(); if (r.top > vh || r.bottom < 0) return;
+    const p = Math.max(0, Math.min(1, (vh - r.top) / (vh * 0.85)));
+    big.style.letterSpacing = (0.25 - 0.31 * p).toFixed(3) + 'em';
+    big.style.backgroundPosition = `${(100 - p * 100).toFixed(1)}% 0`;
+  });
+}
+// hero copy drifts up and fades as you scroll away
+function heroParallax() {
+  const h = document.querySelector('.hero-copy'); if (!h || RM) return;
+  onFrame(y => { if (y > innerHeight * 1.3) return; h.style.transform = `translate3d(0,${(y * 0.22).toFixed(1)}px,0)`; h.style.opacity = Math.max(0, 1 - y / (innerHeight * 0.9)).toFixed(3); });
+}
+// gold dust drifting through the whole page
+function dust() {
+  if (RM) return;
+  const cv = document.createElement('canvas'); cv.id = 'dust'; cv.setAttribute('aria-hidden', 'true'); document.body.prepend(cv);
+  const x = cv.getContext('2d'); let w = 0, h = 0; const d = Math.min(devicePixelRatio || 1, 1.5);
+  const fit = () => { w = innerWidth; h = innerHeight; cv.width = w * d; cv.height = h * d; x.setTransform(d, 0, 0, d, 0, 0); };
+  fit(); addEventListener('resize', fit);
+  const N = innerWidth < 700 ? 26 : 54;
+  const P = Array.from({ length: N }, () => ({ x: Math.random(), y: Math.random(), z: 0.3 + Math.random() * 0.7, s: 0.4 + Math.random() * 1.4, p: Math.random() * 6.28 }));
+  let last = 0;
+  const f = t => {
+    requestAnimationFrame(f);
+    if (document.hidden || t - last < 40) return; last = t;
+    x.clearRect(0, 0, w, h);
+    const sy = scrollY;
+    for (const q of P) {
+      q.y -= 0.00022 * q.z * 40 / 16; q.p += 0.02;
+      if (q.y < -0.05) { q.y = 1.05; q.x = Math.random(); }
+      const px = (q.x + Math.sin(q.p) * 0.004) * w, py = ((q.y * h - sy * q.z * 0.25) % h + h) % h;
+      const a = 0.18 + 0.32 * Math.sin(q.p * 0.7) ** 2;
+      x.beginPath(); x.arc(px, py, q.s * q.z, 0, 6.283); x.fillStyle = `rgba(232,200,128,${(a * q.z).toFixed(3)})`; x.fill();
+    }
+  };
+  requestAnimationFrame(f);
+}
+export function motion() {
+  split(); stagger(); kicks(); bands(); bigWord(); heroParallax(); dust();
+  requestAnimationFrame(velFrame);
+  watch();
+}

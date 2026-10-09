@@ -1,5 +1,6 @@
 /* Shared pieces: coin cards, tape chips, badges. */
 import { esc, usd, num, pct, pctCls, ago, img, short } from './core.js';
+import { vel } from './fx.js';
 
 export function badges(c, { all = false } = {}) {
   const k = c.checks || {};
@@ -34,7 +35,7 @@ export function tape(track, html, speed = 38) {
   if (track._raf) cancelAnimationFrame(track._raf);
   const step = t => {
     const dt = Math.min(0.05, (t - last) / 1000); last = t;
-    if (!document.hidden) { x -= (hover ? speed * 0.25 : speed) * dt; if (-x >= w) x += w; track.style.transform = `translate3d(${x.toFixed(1)}px,0,0)`; }
+    if (!document.hidden) { x -= (hover ? speed * 0.25 : speed) * (1 + Math.min(6, Math.abs(vel.v) * 0.35)) * dt; if (-x >= w) x += w; track.style.transform = `translate3d(${x.toFixed(1)}px,0,0)`; }
     track._raf = requestAnimationFrame(step);
   };
   requestAnimationFrame(() => { w = track.scrollWidth / 2 || 1; track._raf = requestAnimationFrame(step); });
