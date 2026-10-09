@@ -55,7 +55,7 @@ export async function api(path, body) {
   return j;
 }
 let cfgP = null;
-export const loadConfig = () => (cfgP = cfgP || api('config').catch(() => ({ ca: '', launches: 'prelaunch', devCapPct: 3, fees: null, pump: null })));
+export const loadConfig = () => (cfgP = cfgP || api('config').catch(() => ({ ca: '', launches: 'prelaunch', devMaxSol: 1, perWallet: 50, fees: null, pump: null })));
 export const img = u => (u ? '/api/img?u=' + encodeURIComponent(u) : '');
 
 /* ---------- brand mark: the A, white half + gold half ---------- */

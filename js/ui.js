@@ -3,11 +3,11 @@ import { esc, usd, num, pct, pctCls, ago, img, short } from './core.js';
 import { vel } from './fx.js';
 
 export function badges(c, { all = false } = {}) {
-  const k = c.checks || {};
+  const k = c.checks || {}, pr = c.pair || {};
   const out = [];
-  if (k.paired) out.push('<span class="tag gold">✓ $ARK pair</span>');
+  if (pr.main) out.push('<span class="tag gold">✓ $ARK pair</span>'); else if (pr.symbol) out.push(`<span class="tag">✓ $${esc(pr.symbol)} pair</span>`);
   if (k.holders) out.push('<span class="tag ok">✓ fees→holders</span>');
-  if (k.dev === true) out.push('<span class="tag ok">✓ dev ≤ 3%</span>'); else if (k.dev === false) out.push('<span class="tag bad">dev &gt; 3%</span>');
+  if (c.creatorPct != null) out.push(`<span class="tag">creator ${c.creatorPct.toFixed(1)}%</span>`);
   if (all && k.registry) out.push('<span class="tag">via ARK</span>');
   return out.join('');
 }
@@ -17,10 +17,14 @@ export function coinCard(c) {
   const prog = Math.round((cv.progress || 0) * 100);
   return `<a class="card coin" href="/coin?m=${esc(c.mint)}" data-mint="${esc(c.mint)}">
     <div class="coin-top">${pic(c)}<div><b>$${esc(c.symbol)}</b><span>${esc(c.name)}</span></div><span class="tag">${ago(c.t)}</span></div>
-    <div class="coin-num"><div><small>Mkt cap</small><b>${usd(c.mcapUsd)}</b></div><div><small>In $ARK</small><b>${num(cv.mcapArk)}</b></div><div><small>24h</small><b class="${pctCls(c.chg24)}">${pct(c.chg24)}</b></div></div>
+    <div class="coin-num"><div><small>Mkt cap</small><b>${usd(c.mcapUsd)}</b></div><div><small>In $${esc((c.pair && c.pair.symbol) || 'ARK')}</small><b>${num(cv.mcapArk)}</b></div><div><small>24h</small><b class="${pctCls(c.chg24)}">${pct(c.chg24)}</b></div></div>
     <div class="grid" style="gap:7px"><div style="display:flex;justify-content:space-between;font:500 11.5px/1 JBM;color:var(--mu)"><span>${cv.complete || cv.migrated ? 'Graduated' : 'Bonding curve'}</span><span>${prog}%</span></div><div class="prog"><i style="width:${prog}%"></i></div></div>
     <div class="badges">${badges(c)}</div>
   </a>`;
+}
+export function pairChip(p, main) {
+  const im = p.image ? `<img src="${esc(p.image.startsWith('/') ? p.image : img(p.image))}" alt="" loading="lazy">` : `<span class="ph">${esc((p.symbol || '?').slice(0, 3))}</span>`;
+  return `<a class="chip${main ? ' main' : ''}" href="/launch${main ? '' : '?pair=' + esc(p.mint)}">${im}<b><i>$</i>${esc(p.symbol)}</b>${main ? '<span class="pt">MAIN PAIR</span>' : `<span>${p.mcapUsd ? usd(p.mcapUsd) : ''}</span>`}</a>`;
 }
 export function chip(c) { return `<a class="chip" href="/coin?m=${esc(c.mint)}">${pic(c)}<b><i>$</i>${esc(c.symbol)}</b><span>${usd(c.mcapUsd)}</span></a>`; }
 export function ghostChips(n = 10) { return Array.from({ length: n }, (_, i) => `<span class="chip ghost"><span class="ph">${String(i + 1).padStart(2, '0')}</span><b><i>$</i>SEAT</b><span>open</span></span>`).join(''); }

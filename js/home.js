@@ -1,11 +1,11 @@
-import { $, $$, esc, usd, num, pct, pctCls, api, toast, copy, W, addr, ensureWallet, signWith, sendSigned, waitFor, solscan, cancelled, chrome, short } from './core.js';
+import { $, $$, esc, usd, num, pct, pctCls, api, toast, copy, W, addr, ensureWallet, signWith, sendSigned, waitFor, solscan, cancelled, chrome, short, img } from './core.js';
 import { fx, watch, roll, reduced } from './fx.js';
-import { coinCard, chip, ghostChips, emptyBoard, tape } from './ui.js';
+import { coinCard, chip, pairChip, ghostChips, emptyBoard, tape } from './ui.js';
 
 const cfg = await chrome('home');
 fx();
 const LIVE = !!cfg.ca;
-let ARK = null, COINS = null;
+let ARK = null, COINS = null, PAIRS = null, LIVEST = null;
 
 /* ---------- hero 3D (falls back to the flat mark) ---------- */
 (async () => {
@@ -16,16 +16,39 @@ let ARK = null, COINS = null;
 /* ---------- live numbers ---------- */
 function renderLive() {
   if (ARK && ARK.live) { $('#lvArk').textContent = usd(ARK.priceUsd); $('#lvArk2').textContent = ARK.mcapUsd ? usd(ARK.mcapUsd) + ' mcap' : 'live'; }
-  else { $('#lvArk').textContent = '—'; $('#lvArk2').textContent = 'pre-launch'; }
+  else { $('#lvArk').textContent = '$ARK'; $('#lvArk2').textContent = 'main pair'; }
   const t = (COINS && COINS.totals) || { coins: 0, arkLocked: 0 };
   roll($('#lvCoins'), String(t.coins));
   $('#lvLocked').textContent = num(t.arkLocked);
   $('#lvFee').textContent = cfg.fees ? (cfg.fees.creator / 100).toFixed(2) + '%' : '—';
 }
 function renderTape() {
-  const list = (COINS && COINS.list) || [];
-  const html = list.length ? list.slice().sort((a, b) => (b.mcapUsd || 0) - (a.mcapUsd || 0)).slice(0, 24).map(chip).join('') + (list.length < 8 ? ghostChips(8 - list.length) : '') : ghostChips(12);
-  const tr = $('#tapeTrack'); if (tr.dataset.h === html) return; tr.dataset.h = html; tape(tr, html, 34);
+  const main = { mint: cfg.ca, symbol: 'ARK', image: '/img/icon-180.png' };
+  const list = (PAIRS && PAIRS.list) || [];
+  const html = pairChip(main, true) + (list.length ? list.slice(0, 22).map(p => pairChip(p)).join('') : ghostChips(8));
+  const tr = $('#tapeTrack'); if (tr.dataset.h === html) return; tr.dataset.h = html; tape(tr, html, 36);
+}
+function renderPairs() {
+  const a = ARK || { live: false }, list = (PAIRS && PAIRS.list) || [];
+  $('#pMain').innerHTML = `<span class="kick">Main pair</span>
+    <div class="big"><img src="/img/icon-180.png" alt=""><div><b>$ARK</b><div class="mu" style="font-size:14px;margin-top:6px">${a.live ? usd(a.mcapUsd) + ' market cap' : 'The coin every coin pairs with'}</div></div></div>
+    <p class="mu" style="margin:0;font-size:15px">Pair with $ARK and every buy of your coin is also a buy of $ARK. 100% of your coin's creator fees still go to its holders.</p>
+    <div class="badges">${a.live ? `<span class="tag ${a.pairable ? 'ok' : 'bad'}">${a.pairable ? '● pairable now' : '● paused'}</span>` : '<span class="tag gold">● main pair</span>'}<span class="tag">depth 1</span><span class="tag">fees → holders</span></div>
+    <a class="btn gold" href="/launch">Launch paired to $ARK <span class="arr">→</span></a>`;
+  $('#pCount').textContent = PAIRS ? `${list.length} real pump.fun coins` : 'checking…';
+  $('#pGrid').innerHTML = list.length ? list.slice(0, 15).map(p => `<a class="pc" href="/launch?pair=${esc(p.mint)}">${p.image ? `<img src="${esc(p.image.startsWith('/') ? p.image : img(p.image))}" alt="" loading="lazy">` : `<span class="ph">${esc(p.symbol.slice(0, 3))}</span>`}<div><b>$${esc(p.symbol)}</b><span>${p.mcapUsd ? usd(p.mcapUsd) : '—'} · ${p.venue === 'curve' ? 'on curve' : 'PumpSwap'}</span></div><span class="go">Pair →</span></a>`).join('')
+    : `<span class="mu">${PAIRS ? 'No other pump.fun coin is pairable right now.' : 'Checking pump.fun…'}</span>`;
+}
+function renderLiveState() {
+  const L = LIVEST, box = $('#liveGrid'); if (!L) { box.innerHTML = Array.from({ length: 4 }, () => '<div class="card lv"><div class="skel" style="height:14px;width:60%"></div><div class="skel" style="height:30px"></div></div>').join(''); return; }
+  const sc = L.scan || {};
+  const pc = sc.trades ? sc.custom / sc.trades * 100 : null, hr = sc.trades ? sc.holderReward / sc.trades * 100 : null;
+  box.innerHTML = [
+    ['New coins', `<span class="dot-live"></span>${L.createV2 ? 'Open' : 'Paused'}`, `${sc.creates != null ? sc.creates + ' created' : 'pump.fun'} in the last ${sc.txs || '—'} transactions`, null],
+    ['Custom-pair trades', pc != null ? pc.toFixed(0) + '%' : '—', `of the last ${sc.trades || '—'} pump.fun trades run on a pair other than SOL`, pc],
+    ['Holder-reward trades', hr != null ? hr.toFixed(0) + '%' : '—', 'of those trades pay their creator fee to holders', hr],
+    ['Fees per trade', L.fees ? `${(L.fees.protocol / 100).toFixed(2)}%<span class="mu" style="font-size:.5em"> + ${(L.fees.creator / 100).toFixed(2)}%</span>` : '—', `pump.fun protocol + creator fee. Pair depth: up to ${L.maxCurveDepth}.`, null],
+  ].map(([k, v, t, bar]) => `<div class="card lv"><small>${k}</small><b>${v}</b><span>${t}</span>${bar != null ? `<div class="bar"><i style="width:${Math.min(100, bar).toFixed(1)}%"></i></div>` : ''}</div>`).join('');
 }
 function renderBoard() {
   const list = (COINS && COINS.list) || [];
@@ -58,10 +81,18 @@ async function load() {
   const [a, c] = await Promise.allSettled([api('ark'), api('coins')]);
   if (a.status === 'fulfilled') ARK = a.value;
   if (c.status === 'fulfilled') COINS = c.value;
-  renderLive(); renderTape(); renderBoard(); renderArk(); watch();
+  renderLive(); renderTape(); renderPairs(); renderBoard(); renderArk(); watch();
 }
-load();
+async function loadSlow() {
+  const [p, l] = await Promise.allSettled([api('pairs'), api('live')]);
+  if (p.status === 'fulfilled') PAIRS = p.value;
+  if (l.status === 'fulfilled') LIVEST = l.value;
+  renderTape(); renderPairs(); renderLiveState();
+}
+renderLiveState(); renderPairs(); renderTape();
+load(); loadSlow();
 setInterval(() => { if (!document.hidden) load(); }, 20000);
+setInterval(() => { if (!document.hidden) loadSlow(); }, 60000);
 
 /* ---------- buy $ARK ---------- */
 function arkBuy() {
@@ -101,23 +132,23 @@ arkBuy();
 
 /* ---------- the gangway ---------- */
 const GANG = [
-  ['Paired to $ARK', "The coin's curve is priced in $ARK. Set in the create instruction itself.", 'ON-CHAIN · QUOTE MINT'],
+  ['The right pair', "$ARK by default, or any pump.fun coin SOL can route through. Set in the create instruction.", 'ON-CHAIN · QUOTE MINT'],
   ['Fees to holders', 'Created as a pump.fun holder-reward coin. 100% of creator fees go to holders, for good.', 'ON-CHAIN · HOLDER REWARDS'],
   ['Two of every kind', 'At most two coins per ticker aboard. The third waits on the dock.', 'REGISTRY'],
   ['No impersonation', 'Major tickers, and any ticker already worth $1M+ on Solana, are refused.', 'MARKET DATA'],
-  [`Dev buy ≤ ${cfg.devCapPct || 3}%`, `The first buy is capped at ${cfg.devCapPct || 3}% of supply.`, 'ON-CHAIN · CREATE TX'],
+  [`Dev buy ≤ ${cfg.devMaxSol || 1} SOL`, `The first buy is capped at ${cfg.devMaxSol || 1} SOL, bought right after the launch.`, 'ENFORCED · BUILDER'],
   ['Clean picture', 'Right format and size, and not a copy of a coin already aboard.', 'IMAGE HASH'],
   ['Links that work', 'X and Telegram links checked for format. The website has to load.', 'LIVE CHECK'],
   ['No promises', 'Descriptions that promise returns get flagged before launch.', 'TEXT'],
-  ['Launch pace', `At most ${cfg.perWallet || 3} launches per wallet per day.`, 'REGISTRY'],
+  ['Launch pace', `Up to ${cfg.perWallet || 50} launches per wallet per day.`, 'REGISTRY'],
 ];
 $('#gang').innerHTML = GANG.map((g, i) => `<div class="card"><span class="n">${String(i + 1).padStart(2, '0')}</span><b>${esc(g[0])}</b><p>${esc(g[1])}</p><span class="chain">${g[2]}</span></div>`).join('');
 watch();
 
 /* ---------- route simulator ---------- */
 const STEPS = {
-  buy: [['You pay SOL', 'Any wallet, any amount.'], ['SOL buys $ARK', "On $ARK's own pump.fun curve or pool."], ['$ARK buys the coin', "The coin's curve is priced in $ARK. All three stops are one transaction: pump.fun's multi-hop swap."]],
-  sell: [['You sell the coin', 'Into its $ARK curve.'], ['The coin pays out $ARK', 'Keep it, or keep going.'], ['$ARK sells for SOL', 'Same transaction, if you want SOL back.']],
+  buy: [['You pay SOL', 'Any wallet, any amount.'], ['SOL buys the pair', "$ARK by default, on its own pump.fun curve or pool."], ['The pair buys the coin', "The coin's curve is priced in its pair. All three stops are one transaction: pump.fun's multi-hop swap."]],
+  sell: [['You sell the coin', 'Into its curve, priced in the pair.'], ['The coin pays out the pair', 'Keep the $ARK, or keep going.'], ['The pair sells for SOL', 'Same transaction, if you want SOL back.']],
   fees: [['Every trade pays a creator fee', `${cfg.fees ? (cfg.fees.creator / 100).toFixed(2) + '% of each trade' : 'Set by pump.fun'}, in $ARK.`], ["The creator is the coin's holder pool", "Set at launch with pump.fun Holder Rewards. Nobody can change it later."], ['pump.fun pays the holders', 'Out of the pool, to the wallets holding the coin.']],
 };
 let mode = 'buy';
@@ -198,7 +229,7 @@ function calc() {
       r.style.setProperty('--p', r.value + '%'); $('#rcSol').textContent = val() + ' SOL';
       if (!LIVE) return; clearTimeout(qTm); qTm = setTimeout(async () => {
         const my = ++qSeq;
-        try { const q = await api('quote', { kind: 'launch', sol: val() }); if (my !== qSeq) return; $('#rcArk').textContent = num(q.ark) + ' $ARK'; $('#rcPct').textContent = q.pct.toFixed(2) + '%'; }
+        try { const q = await api('quote', { kind: 'launch', sol: val() }); if (my !== qSeq) return; $('#rcArk').textContent = num(q.pairOut) + ' $ARK'; $('#rcPct').textContent = q.pct.toFixed(2) + '%'; }
         catch (e) { if (my === qSeq) { $('#rcArk').textContent = '—'; $('#rcPct').textContent = '—'; } }
       }, 350);
     };

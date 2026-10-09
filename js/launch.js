@@ -4,11 +4,11 @@ import { fx } from './fx.js';
 const cfg = await chrome('launch');
 fx();
 const LIVE = cfg.launches === 'open';
-const CAP = cfg.devCapPct || 3;
-const S = { img: null, unit: 'SOL', dev: 0, quote: null, mintSecret: null, mintAddr: null, checks: null, busy: false, coins: [], hashes: null, done: null };
+const CAP = cfg.devMaxSol || 1;
+const S = { img: null, pair: null, pairSym: 'ARK', dev: 0, quote: null, mintSecret: null, mintAddr: null, checks: null, busy: false, coins: [], hashes: null, done: null };
 const cleanSym = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
 const F = () => ({ name: $('#fName').value.trim(), symbol: cleanSym($('#fSym').value), description: $('#fDesc').value.trim(), twitter: $('#fX').value.trim(), telegram: $('#fTg').value.trim(), website: $('#fWeb').value.trim() });
-$('#capLbl').textContent = `optional · max ${CAP}% of supply`;
+$('#capLbl').textContent = `optional · max ${CAP.toFixed(1)} SOL`;
 if (!LIVE) { $('#lpKick').textContent = cfg.launches === 'prelaunch' ? 'Pre-launch' : 'Paused'; $('#lpSub').textContent = cfg.launches === 'prelaunch' ? 'Boarding opens the moment $ARK is live. Fill in your coin and run the gangway now: everything is ready except the launch button.' : 'Launches are paused right now.'; }
 api('coins').then(d => { S.coins = d.list || []; $('#ppSeat').textContent = '#' + String(S.coins.length + 1).padStart(3, '0'); }).catch(() => { $('#ppSeat').textContent = '#001'; });
 
@@ -58,7 +58,8 @@ function pass() {
   const f = F();
   $('#ppSym').textContent = '$' + (f.symbol || 'TICKER');
   $('#ppName').textContent = f.name || 'Your coin';
-  $('#ppDev').textContent = S.quote && S.dev > 0 ? S.quote.pct.toFixed(2) + '%' : S.dev > 0 ? '…' : '0%';
+  $('#ppDev').textContent = S.dev > 0 ? S.dev + ' SOL' : '0 SOL';
+  $('#ppPair').textContent = '$' + (S.pairSym || 'ARK');
   $('#ppCa').textContent = S.done ? short(S.done.mint, 6) : S.mintAddr ? 'CA …' + S.mintAddr.slice(-10) : 'CA ……ark';
 }
 const pe = $('#pass');
@@ -66,37 +67,71 @@ pe.addEventListener('pointermove', e => { const r = pe.getBoundingClientRect(), 
 pe.addEventListener('pointerleave', () => { pe.style.setProperty('--rx', '0deg'); pe.style.setProperty('--ry', '0deg'); });
 
 /* ---------- dev buy ---------- */
-$$('#devUnit button').forEach(b => b.onclick = () => { S.unit = b.dataset.u; $$('#devUnit button').forEach(x => x.classList.toggle('on', x === b)); $('#devUnitLbl').textContent = S.unit === 'SOL' ? 'SOL' : '$ARK'; $('#devNote').textContent = S.unit === 'SOL' ? 'Paid in SOL: right after the launch, one swap goes SOL → $ARK → your coin.' : 'Paid from the $ARK already in your wallet.'; devQuote(); });
+$$('#devQuick button').forEach(b => b.onclick = () => { $('#fDev').value = b.dataset.v; devQuote(); });
 let dTm = 0, dSeq = 0;
 function devQuote() {
   S.dev = Math.max(0, parseFloat($('#fDev').value) || 0); S.quote = null; meter(); sum(); pass();
   clearTimeout(dTm);
   if (!(S.dev > 0)) { schedule(); return; }
-  if (!cfg.ca) { $('#devPct').textContent = 'Calculated when $ARK is live'; schedule(); return; }
+  if (!cfg.ca) { $('#devPct').textContent = 'Share of supply is calculated when $ARK is live'; schedule(); return; }
   dTm = setTimeout(async () => {
     const my = ++dSeq;
-    try { const q = await api('quote', S.unit === 'SOL' ? { kind: 'launch', sol: S.dev, user: addr() } : { kind: 'launch', ark: S.dev }); if (my !== dSeq) return; S.quote = q; }
+    try { const q = await api('quote', { kind: 'launch', sol: Math.min(S.dev, CAP), pair: S.pair, user: addr() }); if (my !== dSeq) return; S.quote = q; }
     catch (e) { if (my === dSeq) $('#devPct').textContent = e.message; }
     meter(); sum(); pass(); schedule();
   }, 450);
 }
 $('#fDev').addEventListener('input', devQuote);
 function meter() {
-  const q = S.quote, bar = $('#devBar'), scale = CAP * 1.5;
-  bar.style.setProperty('--cap', (CAP / scale * 100) + '%');
-  if (!q || !(S.dev > 0)) { bar.querySelector('i').style.width = '0'; bar.classList.remove('over'); if (!(S.dev > 0)) { $('#devPct').textContent = '0% of supply'; $('#devArk').textContent = '—'; } return; }
-  bar.querySelector('i').style.width = Math.min(100, q.pct / scale * 100) + '%';
-  bar.classList.toggle('over', q.overCap);
-  $('#devPct').textContent = `${q.pct.toFixed(2)}% of supply${q.overCap ? ` · over the ${CAP}% cap` : ''}`;
-  $('#devArk').textContent = S.unit === 'SOL' ? `≈ ${num(q.ark)} $ARK` : `max ${num(q.maxArk)} $ARK`;
+  const q = S.quote, bar = $('#devBar');
+  bar.style.setProperty('--cap', '100%');
+  const over = S.dev > CAP + 1e-9;
+  bar.querySelector('i').style.width = Math.min(100, S.dev / CAP * 100) + '%';
+  bar.classList.toggle('over', over);
+  $('#devArk').textContent = over ? `over the ${CAP.toFixed(1)} SOL cap` : `${S.dev || 0} / ${CAP.toFixed(1)} SOL`;
+  if (!(S.dev > 0)) { $('#devPct').textContent = '0% of supply'; return; }
+  if (q) $('#devPct').textContent = `≈ ${q.pct.toFixed(2)}% of supply · ${num(q.pairOut)} $${S.pairSym || 'ARK'} on the way`;
 }
 function sum() {
-  const sol = 0.03 + (S.unit === 'SOL' ? S.dev : 0);
-  $('#sum').innerHTML = `<div><span>Rent + network</span><b>≈ 0.03 SOL</b></div>
-    <div><span>Dev buy</span><b>${S.dev > 0 ? (S.unit === 'SOL' ? `${S.dev} SOL${S.quote ? ` → ${num(S.quote.ark)} $ARK` : ''}` : `${S.dev} $ARK`) : 'none'}</b></div>
+  const sol = 0.03 + Math.min(S.dev, CAP);
+  $('#sum').innerHTML = `<div><span>Pair</span><b>$${esc(S.pairSym || 'ARK')}${S.pair ? '' : ' · main'}</b></div>
+    <div><span>Rent + network</span><b>≈ 0.03 SOL</b></div>
+    <div><span>Dev buy</span><b>${S.dev > 0 ? `${Math.min(S.dev, CAP)} SOL → $${esc(S.pairSym || 'ARK')} → coin` : 'none'}</b></div>
     <div><span>ARK fee</span><b>none</b></div>
-    <div><span>You need</span><b>≈ ${sol.toFixed(3)} SOL${S.unit === 'ARK' && S.dev > 0 ? ` + ${S.dev} $ARK` : ''}</b></div>`;
+    <div><span>You need</span><b>≈ ${sol.toFixed(3)} SOL</b></div>`;
 }
+
+/* ---------- the pair: $ARK by default, or a real pump.fun coin ---------- */
+function setPair(mint, sym, btn) {
+  S.pair = mint; S.pairSym = sym || 'ARK';
+  $('#pickArk').classList.toggle('on', !mint);
+  $$('#prow button').forEach(b => b.classList.toggle('on', b === btn));
+  if (!mint) { $('#pairIn').value = ''; $('#pairState').textContent = ''; }
+  S.quote = null; pass(); sum(); devQuote(); schedule();
+}
+$('#pickArk').addEventListener('click', () => setPair(null, 'ARK'));
+$('#pickArk').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPair(null, 'ARK'); } });
+api('pairs').then(d => {
+  const list = (d.list || []).slice(0, 20);
+  $('#prow').innerHTML = list.length ? list.map(p => `<button type="button" data-m="${esc(p.mint)}" data-s="${esc(p.symbol)}">${p.image ? `<img src="${esc(p.image.startsWith('/') ? p.image : img(p.image))}" alt="">` : ''}$${esc(p.symbol)}</button>`).join('') : '<span class="mu" style="font-size:13px">No other pairable coin found right now.</span>';
+  $$('#prow button').forEach(b => b.onclick = () => setPair(b.dataset.m, b.dataset.s, b));
+  const want = new URLSearchParams(location.search).get('pair');
+  if (want) { const b = $$('#prow button').find(x => x.dataset.m === want); if (b) setPair(want, b.dataset.s, b); else { $('#pairIn').value = want; checkPairInput(); } }
+}).catch(() => { $('#prow').innerHTML = '<span class="mu" style="font-size:13px">Could not load pairs.</span>'; });
+let pTm = 0;
+async function checkPairInput() {
+  const v = $('#pairIn').value.trim();
+  if (!v) { if (S.pair && !$$('#prow button.on').length) setPair(null, 'ARK'); $('#pairState').textContent = ''; return; }
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v)) { $('#pairState').textContent = 'not an address'; return; }
+  $('#pairState').textContent = 'checking…';
+  try {
+    const r = await api('pair?m=' + encodeURIComponent(v));
+    if (r.main) { setPair(null, 'ARK'); return; }
+    if (r.pairable) { setPair(r.mint, r.symbol || v.slice(0, 4)); $('#pairIn').value = v; $('#pairState').innerHTML = `<span class="up">✓ $${esc(r.symbol || v.slice(0, 4))}</span>`; }
+    else $('#pairState').innerHTML = `<span class="down" title="${esc(r.why)}">✕ can't pair</span>`;
+  } catch (e) { $('#pairState').textContent = 'not found'; }
+}
+$('#pairIn').addEventListener('input', () => { clearTimeout(pTm); pTm = setTimeout(checkPairInput, 500); });
 
 /* ---------- vanity address (in this browser, in workers) ---------- */
 let workers = [];
@@ -131,7 +166,7 @@ function schedule() { clearTimeout(cTm); paintPending(); cTm = setTimeout(runChe
 function paintPending() { $$('#checks .ck').forEach(li => { li.className = 'ck run'; }); $('#gState').textContent = 'checking…'; }
 async function runChecks() {
   const my = ++cSeq, f = F();
-  const body = { ...f, symbol: $('#fSym').value, image: S.img ? { type: S.img.type, bytes: S.img.bytes, w: S.img.w, h: S.img.h, dup: S.img.dup } : null, user: addr(), devArk: S.unit === 'ARK' ? S.dev : S.quote ? S.quote.ark : 0, devSol: S.unit === 'SOL' ? S.dev : 0 };
+  const body = { ...f, symbol: $('#fSym').value, image: S.img ? { type: S.img.type, bytes: S.img.bytes, w: S.img.w, h: S.img.h, dup: S.img.dup } : null, user: addr(), pair: S.pair, pairSymbol: S.pairSym, devSol: S.dev };
   try {
     const r = await api('check', body); if (my !== cSeq) return;
     S.checks = r;
@@ -181,14 +216,14 @@ async function launch() {
     const kp = S.mintSecret ? L.Keypair.fromSecretKey(S.mintSecret) : L.Keypair.generate();
     const mint = kp.publicKey.toBase58();
     st = log('Building the launch (simulated on-chain first)');
-    const b = await api('build', { step: 'launch', user, mint, name: f.name, symbol: f.symbol, uri: up.uri, dev: S.dev, devVia: S.unit, slippage: 5 });
+    const b = await api('build', { step: 'launch', user, mint, name: f.name, symbol: f.symbol, uri: up.uri, pair: S.pair, dev: Math.min(S.dev, CAP), slippage: 5 });
     ok(st, `${(b.units || 0).toLocaleString()} CU`);
     st = log('Sign the launch in your wallet');
     const sig = await sendSigned(await signWith(b.tx, kp)); ok(st, link(sig));
     st = log('Confirming on Solana'); await waitFor(sig); ok(st);
     if (b.followUp) {
-      st = log(`Building your first buy (${b.followUp.via === 'SOL' ? 'SOL → $ARK → $' + f.symbol : '$ARK → $' + f.symbol})`);
-      const d = await api('build', { step: 'devbuy', user, mint, via: b.followUp.via, amount: b.followUp.amount, slippage: 5 }); ok(st, `${d.dev.pct.toFixed(2)}% of supply`);
+      st = log(`Building your first buy: ${b.followUp.amount} SOL → $${S.pairSym || 'ARK'} → $${f.symbol}`);
+      const d = await api('build', { step: 'devbuy', user, mint, amount: b.followUp.amount, slippage: 5 }); ok(st, `${d.dev.pct.toFixed(2)}% of supply`);
       st = log('Sign the first buy'); const s2 = await sendSigned(await signWith(d.tx)); ok(st, link(s2));
       st = log('Confirming'); await waitFor(s2); ok(st);
     }
@@ -201,9 +236,9 @@ $('#go').addEventListener('click', launch);
 function success() {
   const d = S.done;
   $('#ppStamp').classList.add('on'); pass();
-  const share = `https://x.com/intent/post?text=${encodeURIComponent(`Just boarded $${d.symbol} on ARK.\nPaired to $ARK. 100% of creator fees go to holders.\n\n${location.origin}/coin?m=${d.mint}`)}`;
+  const share = `https://x.com/intent/post?text=${encodeURIComponent(`Just boarded $${d.symbol} on ARK.\nPaired to $${S.pairSym || 'ARK'}. 100% of creator fees go to holders.\n\n${location.origin}/coin?m=${d.mint}`)}`;
   $('#done').hidden = false;
-  $('#done').innerHTML = `<div class="grid" style="gap:10px"><b style="font-size:20px">You're aboard.</b><span class="mu">$${esc(d.symbol)} is live on pump.fun, paired to $ARK.</span>
+  $('#done').innerHTML = `<div class="grid" style="gap:10px"><b style="font-size:20px">You're aboard.</b><span class="mu">$${esc(d.symbol)} is live on pump.fun, paired to $${esc(S.pairSym || 'ARK')}.</span>
     <div class="quick"><a class="btn sm" href="/coin?m=${esc(d.mint)}">Open coin</a><a class="btn sm" href="https://pump.fun/coin/${esc(d.mint)}" target="_blank" rel="noopener">pump.fun ↗</a><a class="btn sm" href="${share}" target="_blank" rel="noopener">Share on X</a><button class="btn sm" id="dlPass">Boarding pass ↓</button></div></div>`;
   $('#dlPass').onclick = drawPass;
   toast(`$${d.symbol} is aboard`, 'ok');
@@ -223,7 +258,7 @@ async function drawPass() {
   if (S.img) { try { const im = await loadImg(S.img.url); x.save(); const r = 28; x.beginPath(); x.roundRect(64, 170, 220, 220, r); x.clip(); const k = Math.max(220 / im.naturalWidth, 220 / im.naturalHeight); x.drawImage(im, 64 + (220 - im.naturalWidth * k) / 2, 170 + (220 - im.naturalHeight * k) / 2, im.naturalWidth * k, im.naturalHeight * k); x.restore(); } catch (e) { } }
   x.fillStyle = '#f3f0e8'; x.font = '800 84px Inter'; x.fillText('$' + S.done.symbol, 320, 262);
   x.fillStyle = '#9a958d'; x.font = '500 28px Inter'; x.fillText(F().name.slice(0, 40), 322, 312);
-  const cells = [['PAIRED TO', '$ARK'], ['CREATOR FEES', '100% HOLDERS'], ['DEV BUY', S.quote && S.dev > 0 ? S.quote.pct.toFixed(2) + '%' : '0%']];
+  const cells = [['PAIRED TO', '$' + (S.pairSym || 'ARK')], ['CREATOR FEES', '100% HOLDERS'], ['DEV BUY', (S.dev > 0 ? Math.min(S.dev, CAP) : 0) + ' SOL']];
   cells.forEach(([k, v], i) => { const cx = 320 + i * 270; x.fillStyle = '#6d6963'; x.font = '500 16px JBM'; x.fillText(k, cx, 370); x.fillStyle = '#f3f0e8'; x.font = '700 28px Inter'; x.fillText(v, cx, 408); });
   x.setLineDash([8, 8]); x.beginPath(); x.moveTo(48, 470); x.lineTo(W2 - 48, 470); x.stroke(); x.setLineDash([]);
   x.fillStyle = '#9a958d'; x.font = '500 20px JBM'; x.fillText(S.done.mint, 64, 530);

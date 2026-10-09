@@ -15,20 +15,21 @@ function head(d) {
   $('#cpHead').innerHTML = `<div class="cp-head">
     ${d.image ? `<img class="pic" src="${esc(img(d.image))}" alt="">` : '<div class="pic"></div>'}
     <div><h1>$${esc(d.symbol)} <span class="mu" style="font-weight:500;font-size:.5em;letter-spacing:-.01em">${esc(d.name)}</span></h1>
-      <div class="sub"><button class="ca" id="mintChip">CA <b>${short(d.mint, 5)}</b><i>COPY</i></button>${cv.paired ? '<span class="tag gold">paired to $ARK</span>' : '<span class="tag bad">not paired to $ARK</span>'}${d.checks.holders ? '<span class="tag ok">fees → holders</span>' : ''}${d.viaArk ? '<span class="tag">launched via ARK</span>' : ''}${cv.complete || cv.migrated ? '<span class="tag gold">graduated</span>' : ''}</div></div>
+      <div class="sub"><button class="ca" id="mintChip">CA <b>${short(d.mint, 5)}</b><i>COPY</i></button>${d.pair && d.pair.main ? '<span class="tag gold">paired to $ARK · main</span>' : d.pair && !d.pair.sol ? `<span class="tag">paired to $${esc(d.pair.symbol)}</span>` : '<span class="tag">paired to SOL</span>'}${d.checks.holders ? '<span class="tag ok">fees → holders</span>' : ''}${d.viaArk ? '<span class="tag">launched via ARK</span>' : ''}${cv.complete || cv.migrated ? '<span class="tag gold">graduated</span>' : ''}</div></div>
     <div class="quick">${d.twitter ? `<a class="btn sm" href="${esc(d.twitter)}" target="_blank" rel="noopener nofollow">X ↗</a>` : ''}${d.telegram ? `<a class="btn sm" href="${esc(d.telegram)}" target="_blank" rel="noopener nofollow">Telegram ↗</a>` : ''}${d.website ? `<a class="btn sm" href="${esc(d.website)}" target="_blank" rel="noopener nofollow">Website ↗</a>` : ''}<a class="btn sm" href="https://pump.fun/coin/${esc(d.mint)}" target="_blank" rel="noopener">pump.fun ↗</a></div>
   </div>${d.description ? `<p class="mu" style="max-width:760px;margin:-6px 0 22px">${esc(d.description)}</p>` : ''}`;
   $('#mintChip').onclick = () => copy(d.mint, 'Contract address copied');
 }
 function stats(d) {
   const cv = d.curve || {}, m = d.market || {};
-  const arkUsd = d.ark && d.ark.priceUsd;
+  const PS = (d.pair && d.pair.symbol) || 'ARK';
   const priceArk = cv.priceArk;
+  $('#chartTitle').textContent = 'Price in $' + PS;
   $('#cpStats').innerHTML = [
-    ['Market cap', usd(m.mcapUsd || cv.mcapUsd), cv.mcapArk != null ? num(cv.mcapArk) + ' $ARK' : ''],
-    ['Price', priceArk != null && arkUsd ? usd(priceArk * arkUsd) : usd(m.priceUsd), priceArk != null ? sig(priceArk) + ' $ARK' : ''],
+    ['Market cap', usd(m.mcapUsd || cv.mcapUsd), cv.mcapArk != null ? num(cv.mcapArk) + ' $' + PS : ''],
+    ['Price', usd(m.priceUsd || (cv.mcapUsd ? cv.mcapUsd / 1e9 : null)), priceArk != null ? sig(priceArk) + ' $' + PS : ''],
     ['Bonding curve', Math.round((cv.progress || 0) * 100) + '%', cv.complete || cv.migrated ? 'graduated' : 'to graduation'],
-    ['$ARK locked', num(cv.arkLocked || 0), 'in the curve'],
+    ['$' + PS + ' locked', num(cv.arkLocked || 0), 'in the curve'],
   ].map(([k, v, s]) => `<div class="stat card"><small>${k}</small><b>${v}</b><span class="mono mu" style="font-size:11.5px">${s}</span></div>`).join('');
 }
 function rewards(d) {
@@ -41,10 +42,10 @@ function rewards(d) {
 function checks(d) {
   const k = d.checks;
   const rows = [
-    [k.paired, 'Paired to $ARK', "The curve's quote mint is $ARK."],
+    [k.paired ? true : k.pair ? true : null, d.pair && d.pair.main ? 'Paired to $ARK' : `Paired to $${d.pair ? d.pair.symbol : '?'}`, d.pair && d.pair.main ? "The curve's quote mint is $ARK, the main pair." : "The curve's quote mint is another pump.fun coin."],
     [k.holders, 'Fees to holders', 'Creator is the holder-rewards account. Permanent.'],
     [k.registry, 'Launched via ARK', k.registry ? 'Memo + registry tag in the create transaction.' : 'Not in the ARK registry.'],
-    [k.dev, `Dev buy ≤ ${cfg.devCapPct || 3}%`, d.devPct != null ? `First buy: ${d.devPct.toFixed(2)}% of supply.` : 'Unknown for coins launched elsewhere.'],
+    [d.creatorPct == null ? null : d.creatorPct <= 5, 'Creator holding', d.creatorPct != null ? `The creator holds ${d.creatorPct.toFixed(2)}% right now.` : 'Unknown.'],
     [k.mintAuth, 'No mint authority', 'Nobody can mint more.'],
     [k.freezeAuth, 'No freeze authority', 'Nobody can freeze wallets.'],
   ];
@@ -99,11 +100,14 @@ function paintTrade() {
   $$('#side button').forEach(b => b.classList.toggle('on', b.dataset.s === T.side));
   $$('#via button').forEach(b => b.classList.toggle('on', b.dataset.v === T.via));
   $('#via').querySelector('[data-v="SOL"]').textContent = T.side === 'buy' ? 'with SOL' : 'for SOL';
-  $('#via').querySelector('[data-v="ARK"]').textContent = T.side === 'buy' ? 'with $ARK' : 'for $ARK';
-  $('#amtUnit').textContent = T.side === 'buy' ? (T.via === 'SOL' ? 'SOL' : '$ARK') : '$' + sym;
-  $('#qRoute').textContent = T.side === 'buy' ? (T.via === 'SOL' ? `SOL → $ARK → $${sym}` : `$ARK → $${sym}`) : (T.via === 'SOL' ? `$${sym} → $ARK → SOL` : `$${sym} → $ARK`);
+  const PS = d && d.pair ? d.pair.symbol : 'ARK', direct = d && d.pair && d.pair.sol;
+  $('#via').style.display = direct ? 'none' : '';
+  if (direct) T.via = 'SOL';
+  $('#via').querySelector('[data-v="PAIR"]').textContent = T.side === 'buy' ? `with $${PS}` : `for $${PS}`;
+  $('#amtUnit').textContent = T.side === 'buy' ? (T.via === 'SOL' ? 'SOL' : '$' + PS) : '$' + sym;
+  $('#qRoute').textContent = direct ? (T.side === 'buy' ? `SOL → $${sym}` : `$${sym} → SOL`) : T.side === 'buy' ? (T.via === 'SOL' ? `SOL → $${PS} → $${sym}` : `$${PS} → $${sym}`) : (T.via === 'SOL' ? `$${sym} → $${PS} → SOL` : `$${sym} → $${PS}`);
   const q = $('#quick');
-  if (T.side === 'buy') q.innerHTML = (T.via === 'SOL' ? [0.1, 0.5, 1, 2] : [1000, 10000, 100000]).map(v => `<button data-v="${v}">${num(v)}</button>`).join('');
+  if (T.side === 'buy') q.innerHTML = (T.via === 'SOL' ? [0.1, 0.5, 1, 2] : [1000, 10000, 100000, 1000000]).map(v => `<button data-v="${v}">${num(v)}</button>`).join('');
   else q.innerHTML = [25, 50, 100].map(v => `<button data-p="${v}">${v}%</button>`).join('');
   $$('#quick button').forEach(b => b.onclick = async () => {
     if (b.dataset.v) { $('#amt').value = b.dataset.v; return quote(); }
@@ -111,21 +115,21 @@ function paintTrade() {
     await balances(); const have = T.bal && T.bal.token || 0;
     $('#amt').value = have ? +(have * b.dataset.p / 100).toFixed(6) : 0; quote();
   });
-  const ok = d && d.curve && d.curve.paired && cfg.ca;
+  const ok = d && d.curve && !d.curve.complete && cfg.ca || (d && d.curve && d.curve.migrated && cfg.ca);
   $('#tGo').disabled = !ok;
-  $('#tGo').textContent = !cfg.ca ? 'Trading opens when $ARK is live' : !ok ? 'Not paired to $ARK' : `${T.side === 'buy' ? 'Buy' : 'Sell'} $${sym}`;
+  $('#tGo').textContent = !cfg.ca ? 'Trading opens when $ARK is live' : !ok ? 'Not tradable here right now' : `${T.side === 'buy' ? 'Buy' : 'Sell'} $${sym}`;
 }
 async function balances() { if (!W.acct || !MINT) return; try { T.bal = await api(`bal?u=${addr()}&m=${MINT}`); } catch (e) { } }
 let qTm = 0, qSeq = 0;
 function quote() {
   clearTimeout(qTm);
   const v = parseFloat($('#amt').value);
-  if (!(v > 0) || !cfg.ca || !T.d || !T.d.curve.paired) { $('#qOut').textContent = '—'; return; }
+  if (!(v > 0) || !cfg.ca || !T.d) { $('#qOut').textContent = '—'; return; }
   if (T.side === 'sell' && !W.acct) { $('#qOut').textContent = 'connect to quote'; return; }
   $('#qOut').innerHTML = '<span class="skel">0000000</span>';
   qTm = setTimeout(async () => {
     const my = ++qSeq;
-    try { const q = await api('quote', { kind: 'trade', mint: MINT, side: T.side, via: T.via, amount: v, user: addr() }); if (my !== qSeq) return; $('#qOut').textContent = `${num(q.out)} ${T.side === 'buy' ? '$' + T.d.symbol : T.via === 'SOL' ? 'SOL' : '$ARK'}`; }
+    try { const q = await api('quote', { kind: 'trade', mint: MINT, side: T.side, via: T.via, amount: v, user: addr() }); if (my !== qSeq) return; $('#qOut').textContent = `${num(q.out)} ${T.side === 'buy' ? '$' + T.d.symbol : T.via === 'SOL' ? 'SOL' : '$' + (T.d.pair ? T.d.pair.symbol : 'ARK')}`; }
     catch (e) { if (my === qSeq) $('#qOut').textContent = e.message.length > 40 ? '—' : e.message; }
   }, 400);
 }
@@ -142,7 +146,7 @@ $('#tGo').onclick = async () => {
     btn.textContent = 'Sign in your wallet…';
     const s = await sendSigned(await signWith(b.tx)); btn.textContent = 'Confirming…';
     await waitFor(s);
-    toast(`Done: ${num(b.out)} ${T.side === 'buy' ? '$' + T.d.symbol : T.via === 'SOL' ? 'SOL' : '$ARK'}`, 'ok');
+    toast(`Done: ${num(b.out)} ${T.side === 'buy' ? '$' + T.d.symbol : T.via === 'SOL' ? 'SOL' : '$' + (T.d.pair ? T.d.pair.symbol : 'ARK')}`, 'ok');
     load(); balances();
   } catch (e) { toast(cancelled(e) ? 'Cancelled in the wallet. Nothing was sent.' : e.message, 'bad'); }
   finally { btn.disabled = false; btn.textContent = t0; paintTrade(); }
