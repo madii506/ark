@@ -125,6 +125,34 @@ async function sdkCall(fn) {
   }
   throw http(502, 'Solana RPC is busy: ' + String(last && last.message || last).slice(0, 160));
 }
+/* Raw JSON-RPC for transaction reads: mainnet now carries version-1 transactions, which web3.js 1.x does not parse,
+ * and public nodes allow one getTransaction per batch, so these go one by one, a few at a time. */
+async function rawRpc(method, params, ms = 9000) {
+  let last;
+  for (const u of RPCS) {
+    try {
+      const r = await timedFetch(ms)(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+      const j = await r.json();
+      if (j.error) throw new Error(j.error.message || 'rpc error');
+      return j.result;
+    } catch (e) { last = e; }
+  }
+  throw http(502, 'Solana RPC is busy: ' + String(last && last.message || last).slice(0, 160));
+}
+async function getTxs(sigs, par = 6) {
+  const out = new Array(sigs.length).fill(null);
+  let i = 0;
+  const worker = async () => { while (i < sigs.length) { const k = i++; try { out[k] = await rawRpc('getTransaction', [sigs[k], { encoding: 'json', maxSupportedTransactionVersion: 1, commitment: 'confirmed' }], 8000); } catch (e) { } } };
+  await Promise.all(Array.from({ length: Math.min(par, sigs.length) }, worker));
+  return out;
+}
+const PUMP_ID = PUMP_PROGRAM_ID.toBase58();
+function keysOf(tx) {
+  const msg = tx.transaction.message;
+  const st = (msg.accountKeys || msg.staticAccountKeys || []).map(k => typeof k === 'string' ? k : k.pubkey ? String(k.pubkey) : k.toBase58());
+  const la = tx.meta && tx.meta.loadedAddresses ? [...(tx.meta.loadedAddresses.writable || []), ...(tx.meta.loadedAddresses.readonly || [])].map(String) : [];
+  return [...st, ...la];
+}
 function pk(s, what = 'address') { try { return new PublicKey(String(s || '').trim()); } catch (e) { throw http(400, 'Invalid ' + what); } }
 const clean = (s, n) => String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
 const cleanSym = s => clean(s, 10).toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -153,21 +181,14 @@ function eventsOf(tx, name) {
     if (b.length > 8 && b.subarray(0, 8).equals(d)) out.push(b.subarray(8));
   }
   if (!out.length) {
-    const msg = tx.transaction.message, keys = allKeys(tx);
+    const keys = keysOf(tx);
     for (const g of tx.meta.innerInstructions || []) for (const ix of g.instructions || []) {
-      const prog = keys[ix.programIdIndex]; if (!prog || !prog.equals(PUMP_PROGRAM_ID)) continue;
+      if (keys[ix.programIdIndex] !== PUMP_ID) continue;
       let b; try { b = Buffer.from(typeof ix.data === 'string' ? bs58.decode(ix.data) : ix.data); } catch (e) { continue; }
       if (b.length > 16 && b.subarray(0, 8).equals(EVENT_IX_TAG) && b.subarray(8, 16).equals(d)) out.push(b.subarray(16));
     }
-    void msg;
   }
   return out;
-}
-function allKeys(tx) {
-  const msg = tx.transaction.message;
-  const st = msg.staticAccountKeys || msg.accountKeys || [];
-  const la = tx.meta && tx.meta.loadedAddresses ? [...(tx.meta.loadedAddresses.writable || []), ...(tx.meta.loadedAddresses.readonly || [])].map(k => new PublicKey(k)) : [];
-  return [...st.map(k => (k.pubkey ? k.pubkey : k)), ...la];
 }
 const safe = (fn, d = null) => { try { return fn(); } catch (e) { return d; } };
 
@@ -264,33 +285,29 @@ async function launches() {
   return cached('launches', 25e3, async () => {
     const sigs = await rpc(c => c.getSignaturesForAddress(REGISTRY, { limit: 200 }));
     const good = sigs.filter(s => !s.err).slice(0, 160);
+    const txs = await getTxs(good.map(s => s.signature), 8);
     const out = [];
-    for (let i = 0; i < good.length; i += 25) {
-      const part = good.slice(i, i + 25);
-      const txs = await rpc(c => c.getTransactions(part.map(s => s.signature), { maxSupportedTransactionVersion: 0, commitment: 'confirmed' }));
-      txs.forEach((tx, k) => {
-        if (!tx || !tx.meta || tx.meta.err) return;
-        const logs = tx.meta.logMessages || [];
-        const m = logs.map(l => l.match(MEMO_RE)).find(Boolean); if (!m) return;
-        const msg = tx.transaction.message, keys = msg.staticAccountKeys || msg.accountKeys;
-        const ixs = msg.compiledInstructions || msg.instructions || [];
-        let meta = null;
-        for (const ix of ixs) {
-          const prog = keys[ix.programIdIndex]; if (!prog || !prog.equals(PUMP_PROGRAM_ID)) continue;
-          const data = ix.data instanceof Uint8Array ? ix.data : bs58.decode(ix.data);
-          meta = parseCreate(data); if (meta) break;
-        }
-        if (!meta || msg.header.numRequiredSignatures < 2) return;
-        const creator = keys[0].toBase58(), mint = keys[1].toBase58();
-        const ce = eventsOf(tx, 'CreateEvent').map(b => safe(() => PUMP_SDK.decodeCreateEventBc(b))).find(Boolean);
-        const devUnits = (tx.meta.postTokenBalances || []).filter(b => b.mint === mint && b.owner === creator).reduce((s, b) => s + Number(b.uiTokenAmount.amount || 0), 0);
-        out.push({
-          sig: part[k].signature, t: (tx.blockTime || part[k].blockTime || 0) * 1000, creator, mint, ...meta,
-          devPct: devUnits / SUPPLY_UNITS * 100,
-          event: ce ? { quoteMint: ce.quoteMint.toBase58(), isHolderReward: !!ce.isHolderReward, depth: ce.depth } : null,
-        });
+    txs.forEach((tx, k) => {
+      if (!tx || !tx.meta || tx.meta.err) return;
+      const logs = tx.meta.logMessages || [];
+      const m = logs.map(l => l.match(MEMO_RE)).find(Boolean); if (!m) return;
+      const msg = tx.transaction.message, keys = keysOf(tx);
+      let meta = null;
+      for (const ix of msg.instructions || []) {
+        if (keys[ix.programIdIndex] !== PUMP_ID) continue;
+        const data = safe(() => bs58.decode(ix.data)); if (!data) continue;
+        meta = parseCreate(data); if (meta) break;
+      }
+      if (!meta || !msg.header || msg.header.numRequiredSignatures < 2) return;
+      const creator = keys[0], mint = keys[1];
+      const ce = eventsOf(tx, 'CreateEvent').map(b => safe(() => PUMP_SDK.decodeCreateEventBc(b))).find(Boolean);
+      const devUnits = (tx.meta.postTokenBalances || []).filter(b => b.mint === mint && b.owner === creator).reduce((s, b) => s + Number(b.uiTokenAmount.amount || 0), 0);
+      out.push({
+        sig: good[k].signature, t: (tx.blockTime || good[k].blockTime || 0) * 1000, creator, mint, ...meta,
+        devPct: devUnits / SUPPLY_UNITS * 100,
+        event: ce ? { quoteMint: ce.quoteMint.toBase58(), isHolderReward: !!ce.isHolderReward, depth: ce.depth } : null,
       });
-    }
+    });
     return out;
   });
 }
@@ -354,23 +371,20 @@ async function trades(mint, limit = 60) {
     const curve = bondingCurvePda(new PublicKey(mint));
     const sigs = await rpc(c => c.getSignaturesForAddress(curve, { limit }));
     const good = sigs.filter(s => !s.err);
+    const txs = await getTxs(good.map(s => s.signature), 8);
     const out = [];
-    for (let i = 0; i < good.length; i += 20) {
-      const part = good.slice(i, i + 20);
-      let txs = []; try { txs = await rpc(c => c.getTransactions(part.map(s => s.signature), { maxSupportedTransactionVersion: 0, commitment: 'confirmed' })); } catch (e) { }
-      txs.forEach((tx, k) => {
-        for (const raw of eventsOf(tx, 'TradeEvent')) {
-          const ev = safe(() => PUMP_SDK.decodeTradeEventBc(raw)); if (!ev || ev.mint.toBase58() !== mint) continue;
-          const quote = ev.quoteAmount && !ev.quoteAmount.isZero() ? ev.quoteAmount : ev.solAmount;
-          const vq = ev.virtualQuoteReserves && !ev.virtualQuoteReserves.isZero() ? ev.virtualQuoteReserves : ev.virtualSolReserves;
-          out.push({
-            sig: part[k].signature, t: Number(ev.timestamp.toString()) * 1000 || (part[k].blockTime || 0) * 1000, buy: !!ev.isBuy, user: ev.user.toBase58(),
-            tokens: toUi(ev.tokenAmount), ark: toUi(quote), price: Number(vq.toString()) / Math.max(1, Number(ev.virtualTokenReserves.toString())),
-            rewards: toUi(ev.holderRewards && !ev.holderRewards.isZero() ? ev.holderRewards : ev.creatorFee || 0),
-          });
-        }
-      });
-    }
+    txs.forEach((tx, k) => {
+      for (const raw of eventsOf(tx, 'TradeEvent')) {
+        const ev = safe(() => PUMP_SDK.decodeTradeEventBc(raw)); if (!ev || ev.mint.toBase58() !== mint) continue;
+        const quote = ev.quoteAmount && !ev.quoteAmount.isZero() ? ev.quoteAmount : ev.solAmount;
+        const vq = ev.virtualQuoteReserves && !ev.virtualQuoteReserves.isZero() ? ev.virtualQuoteReserves : ev.virtualSolReserves;
+        out.push({
+          sig: good[k].signature, t: Number(ev.timestamp.toString()) * 1000 || (good[k].blockTime || 0) * 1000, buy: !!ev.isBuy, user: ev.user.toBase58(),
+          tokens: toUi(ev.tokenAmount), ark: toUi(quote), price: Number(vq.toString()) / Math.max(1, Number(ev.virtualTokenReserves.toString())),
+          rewards: toUi(ev.holderRewards && !ev.holderRewards.isZero() ? ev.holderRewards : ev.creatorFee || 0),
+        });
+      }
+    });
     return out.sort((a, b) => b.t - a.t);
   });
 }
@@ -388,13 +402,10 @@ async function rewards(mint, quoteMint, quoteProg) {
     } catch (e) { }
     try {
       const sigs = await rpc(c => c.getSignaturesForAddress(H, { limit: 60 }));
-      const good = sigs.filter(s => !s.err);
-      for (let i = 0; i < good.length; i += 20) {
-        const txs = await rpc(c => c.getTransactions(good.slice(i, i + 20).map(s => s.signature), { maxSupportedTransactionVersion: 0, commitment: 'confirmed' }));
-        for (const tx of txs) for (const raw of eventsOf(tx, 'DistributeFeeToHoldersEvent')) {
-          const ev = safe(() => PUMP_SDK.decodeDistributeFeeToHoldersEvent(raw)); if (!ev || ev.mint.toBase58() !== mint) continue;
-          paid += toUi(ev.total); payouts++; const t = Number(ev.timestamp.toString()) * 1000; if (!lastPaid || t > lastPaid) lastPaid = t;
-        }
+      const txs = await getTxs(sigs.filter(s => !s.err).map(s => s.signature), 8);
+      for (const tx of txs) for (const raw of eventsOf(tx, 'DistributeFeeToHoldersEvent')) {
+        const ev = safe(() => PUMP_SDK.decodeDistributeFeeToHoldersEvent(raw)); if (!ev || ev.mint.toBase58() !== mint) continue;
+        paid += toUi(ev.total); payouts++; const t = Number(ev.timestamp.toString()) * 1000; if (!lastPaid || t > lastPaid) lastPaid = t;
       }
     } catch (e) { }
     return { pda: H.toBase58(), pending, paid, payouts, lastPaid };
@@ -418,7 +429,7 @@ async function coin(mintStr) {
       const sigs = await rpc(c => c.getSignaturesForAddress(bondingCurvePda(m), { limit: 1000 })).catch(() => []);
       const first = sigs.length ? sigs[sigs.length - 1] : null;
       if (first) {
-        const tx = await rpc(c => c.getTransaction(first.signature, { maxSupportedTransactionVersion: 0, commitment: 'confirmed' })).catch(() => null);
+        const [tx] = await getTxs([first.signature], 1);
         const ce = tx ? eventsOf(tx, 'CreateEvent').map(b => safe(() => PUMP_SDK.decodeCreateEventBc(b))).find(Boolean) : null;
         if (ce) base = { sig: first.signature, t: Number(ce.timestamp.toString()) * 1000, creator: ce.user.toBase58(), mint, name: ce.name, symbol: ce.symbol, uri: ce.uri, devPct: null };
       }
@@ -520,11 +531,9 @@ async function altPool() {
     if (!keys.length) {
       const count = {};
       for (const prog of [PUMP_PROGRAM_ID, PUMP_AMM_PROGRAM_ID]) {
-        const sigs = await rpc(c => c.getSignaturesForAddress(prog, { limit: 75 })).catch(() => []);
-        for (let i = 0; i < sigs.length; i += 25) {
-          let txs = []; try { txs = await rpc(c => c.getTransactions(sigs.slice(i, i + 25).map(s => s.signature), { maxSupportedTransactionVersion: 0 })); } catch (e) { }
-          for (const tx of txs) for (const l of ((tx && tx.transaction.message.addressTableLookups) || [])) { const k = l.accountKey.toBase58(); count[k] = (count[k] || 0) + 1; }
-        }
+        const sigs = await rpc(c => c.getSignaturesForAddress(prog, { limit: 60 })).catch(() => []);
+        const txs = await getTxs(sigs.filter(s => !s.err).map(s => s.signature), 8);
+        for (const tx of txs) for (const l of ((tx && tx.transaction.message.addressTableLookups) || [])) { const k = String(l.accountKey); count[k] = (count[k] || 0) + 1; }
       }
       keys = Object.entries(count).sort((a, b) => b[1] - a[1]).slice(0, 12).map(e => e[0]);
     }
@@ -882,10 +891,10 @@ async function img(req, res, u) {
 async function recentPumpCoins(limit = 120) {
   const sigs = await rpc(c => c.getSignaturesForAddress(PUMP_PROGRAM_ID, { limit }));
   const found = [];
-  for (let i = 0; i < sigs.length; i += 25) {
-    let txs = []; try { txs = await rpc(c => c.getTransactions(sigs.slice(i, i + 25).map(s => s.signature), { maxSupportedTransactionVersion: 0 })); } catch (e) { }
-    for (const tx of txs) for (const raw of eventsOf(tx, 'CreateEvent')) { const ev = safe(() => PUMP_SDK.decodeCreateEventBc(raw)); if (ev) found.push(ev); }
-  }
+  const txs = await getTxs(sigs.filter(s => !s.err).map(s => s.signature), 10);
+  let seen = 0;
+  for (const tx of txs) { if (tx) seen++; for (const raw of eventsOf(tx, 'CreateEvent')) { const ev = safe(() => PUMP_SDK.decodeCreateEventBc(raw)); if (ev) found.push(ev); } }
+  found.seen = seen;
   return found;
 }
 async function holderWith(mint, minSol = 0.08) {
@@ -910,7 +919,7 @@ async function lab(qs) {
   if (!qMint) {
     recent = await recentPumpCoins(Number(qs.get('scan')) || 120);
     const cand = recent.filter(e => e.quoteMint.equals(PublicKey.default) && !e.isMayhemMode && !(e.depth > 0));
-    if (!cand.length) { step('pick', { ok: false, note: 'no fresh SOL-quoted coin in the scan' }); return out; }
+    if (!cand.length) { step('pick', { ok: false, note: 'no fresh SOL-quoted coin in the scan', seen: recent.seen, creates: recent.length }); return out; }
     qMint = cand[0].mint; step('pick', { ok: true, mint: qMint.toBase58(), symbol: cand[0].symbol, seenCreates: recent.length, pairedSeen: recent.filter(e => e.depth > 0).map(e => ({ mint: e.mint.toBase58(), quote: e.quoteMint.toBase58(), symbol: e.symbol, holderReward: !!e.isHolderReward })).slice(0, 6) });
   }
   let q;
