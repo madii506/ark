@@ -474,10 +474,12 @@ async function coin(mintStr) {
       } catch (e) { }
     }
     const p = dex[mint];
+    if (!base && p && p.baseToken) base = { mint, name: clean(p.baseToken.name, 40), symbol: clean(p.baseToken.symbol, 16), uri: '', creator: null, t: p.pairCreatedAt || null, sig: null, devPct: null };
+    const dexImg = p && p.info && typeof p.info.imageUrl === 'string' ? p.info.imageUrl : null;
     return {
       mint, name: base ? base.name : '', symbol: base ? base.symbol : '', uri: base ? base.uri : '', creator: base ? base.creator : null, createdAt: base ? base.t : null, createSig: base ? base.sig : null,
       viaArk: !!reg, devPct: reg ? reg.devPct : null, creatorPct,
-      image: md && md.image, description: md && md.description, twitter: md && md.twitter, telegram: md && md.telegram, website: md && md.website,
+      image: (md && md.image) || dexImg, description: md && md.description, twitter: md && md.twitter, telegram: md && md.telegram, website: md && md.website,
       curve: cv, ark,
       mintAuthority: mi && mi.mintAuthority ? mi.mintAuthority.toBase58() : null, freezeAuthority: mi && mi.freezeAuthority ? mi.freezeAuthority.toBase58() : null,
       tokenProgram: prog.toBase58(),
