@@ -2,6 +2,7 @@ import { $, $$, esc, usd, num, sig, pct, pctCls, ago, api, toast, copy, W, addr,
 import { fx, watch } from './fx.js';
 
 const cfg = await chrome('coin');
+{ const fe = document.getElementById('qFee'); if (fe) fe.textContent = ((cfg.feeBps != null ? cfg.feeBps : 500) / 100) + '% of the trade'; }
 fx();
 const MINT = new URLSearchParams(location.search).get('m') || (location.pathname.match(/\/c\/([1-9A-HJ-NP-Za-km-z]{32,44})/) || [])[1];
 const T = { side: 'buy', via: 'SOL', d: null, bal: null };

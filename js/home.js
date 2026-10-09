@@ -1,10 +1,11 @@
 import { $, $$, esc, usd, num, pct, pctCls, api, toast, copy, W, addr, ensureWallet, signWith, sendSigned, waitFor, solscan, cancelled, chrome, short, img } from './core.js';
-import { fx, watch, roll, reduced } from './fx.js';
+import { fx, watch, roll, reduced, onFrame } from './fx.js';
 import { coinCard, chip, pairChip, ghostChips, emptyBoard, tape } from './ui.js';
 
 const cfg = await chrome('home');
 fx();
 const LIVE = !!cfg.ca;
+const FEEP = ((cfg.feeBps != null ? cfg.feeBps : 500) / 100);
 let ARK = null, COINS = null, PAIRS = null, LIVEST = null;
 
 /* ---------- hero 3D (falls back to the flat mark) ---------- */
@@ -101,7 +102,7 @@ function arkBuy() {
     <span class="kick">Buy $ARK</span>
     <div class="inrow"><input id="abAmt" inputmode="decimal" value="0.5" aria-label="SOL amount"><span class="unit">SOL</span></div>
     <div class="quick">${[0.1, 0.5, 1, 5].map(v => `<button data-v="${v}">${v} SOL</button>`).join('')}</div>
-    <div class="sum"><div><span>You get about</span><b id="abOut">—</b></div><div><span>Route</span><b>SOL → $ARK</b></div><div><span>Slippage</span><b>5%</b></div><div><span>ARK fee</span><b>none</b></div></div>
+    <div class="sum"><div><span>You get about</span><b id="abOut">—</b></div><div><span>Route</span><b>SOL → $ARK</b></div><div><span>Slippage</span><b>5%</b></div><div><span>ARK fee</span><b>${FEEP}%</b></div></div>
     <button class="btn gold lg block" id="abGo" ${LIVE ? '' : 'disabled'}>${LIVE ? 'Buy $ARK' : 'Opens at launch'}</button>
     <p class="mu" style="font-size:12.5px;margin:0">Straight through pump.fun's program. Simulated before you sign.</p>`;
   const inp = $('#abAmt'); let tm = 0, seq = 0;
@@ -288,3 +289,48 @@ canvasLoop($('#arkCv'), (c, w, h, dt, t, s) => {
     c.beginPath(); c.arc(x + 6, y, 2.6, 0, 6.283); c.fillStyle = `rgba(233,201,127,${0.9 * a})`; c.fill();
   }
 });
+
+
+/* ---------- launch in four steps: the visual follows the step in view ---------- */
+(() => {
+  const gv = $('#gv'), steps = $$('.gstep'), bar = $('#gvBar'), num = $('#gvNum'); if (!gv || !steps.length) return;
+  let cur = -1;
+  onFrame((y, vh) => {
+    const mid = vh * 0.5; let best = 0, bd = 1e9;
+    steps.forEach((st, i) => { const r = st.getBoundingClientRect(); const d = Math.abs(r.top + r.height / 2 - mid); if (d < bd) { bd = d; best = i; } });
+    const first = steps[0].getBoundingClientRect(), last = steps[steps.length - 1].getBoundingClientRect();
+    const p = Math.max(0, Math.min(1, (mid - first.top) / Math.max(1, last.bottom - first.top)));
+    bar.style.width = (p * 100).toFixed(1) + '%';
+    if (best !== cur) { cur = best; gv.dataset.s = best; num.textContent = String(best + 1).padStart(2, '0'); steps.forEach((st, i) => st.classList.toggle('on', i === best)); }
+  });
+})();
+
+/* ---------- timeline: the line fills as you scroll, dots light up ---------- */
+(() => {
+  const tl = $('#tl'), fill = $('#tlFill'), items = $$('.tl-item'); if (!tl) return;
+  onFrame((y, vh) => {
+    const r = tl.getBoundingClientRect(); if (r.bottom < 0 || r.top > vh) return;
+    const p = Math.max(0, Math.min(1, (vh * 0.62 - r.top) / r.height));
+    fill.style.height = (p * 100).toFixed(1) + '%';
+    items.forEach(it => { const ir = it.getBoundingClientRect(); it.classList.toggle('on', ir.top < vh * 0.62); });
+  });
+})();
+
+/* ---------- by the numbers: pump.fun's settings + ARK's rules, rolled in when they show ---------- */
+function renderNums() {
+  const c = cfg.curve || {}, f = cfg.fees || {};
+  const tiles = [
+    ['Starting virtual SOL', c.virtualSol != null ? String(c.virtualSol) : '30', 'SOL', "every new curve's starting price, set by pump.fun", false],
+    ['Total supply', '1', 'B', 'tokens per coin, 6 decimals', false],
+    ['Sold on the curve', c.realTokens != null ? String(Math.round(c.realTokens / 1e6)) : '793', 'M', 'tokens before a coin graduates to PumpSwap', false],
+    ['Creator fee to holders', f.creator != null ? (f.creator / 100).toFixed(2) : '0.30', '%', 'of every trade, paid to holders on ARK coins', true],
+    ['pump.fun protocol fee', f.protocol != null ? (f.protocol / 100).toFixed(2) : '0.95', '%', 'of every trade, to pump.fun', false],
+    ['Pair depth', cfg.pump ? String(cfg.pump.maxCurveDepth) : '1', 'level', 'a pair must itself be paired to SOL', false],
+    ['Dev buy cap', String(cfg.devMaxSol || 1), 'SOL', 'the most a creator can buy at launch on ARK', true],
+    ['ARK fee', String(FEEP), '%', 'of buys and sells made on ARK. Launching is free.', true],
+  ];
+  $('#nums').innerHTML = tiles.map(([k, v, u, t, g]) => `<div class="card num${g ? ' g' : ''}"><small>${k}</small><b><span data-roll="${v}">${v}</span><i>${u}</i></b><span>${t}</span></div>`).join('');
+  $('#nums').addEventListener('shown', () => $$('#nums [data-roll]').forEach(el => roll(el, el.dataset.roll, 1100)), { once: true });
+  watch();
+}
+renderNums();

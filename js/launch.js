@@ -97,7 +97,7 @@ function sum() {
   $('#sum').innerHTML = `<div><span>Pair</span><b>$${esc(S.pairSym || 'ARK')}${S.pair ? '' : ' · main'}</b></div>
     <div><span>Rent + network</span><b>≈ 0.03 SOL</b></div>
     <div><span>Dev buy</span><b>${S.dev > 0 ? `${Math.min(S.dev, CAP)} SOL → $${esc(S.pairSym || 'ARK')} → coin` : 'none'}</b></div>
-    <div><span>ARK fee</span><b>none</b></div>
+    <div><span>ARK fee</span><b>free to launch</b></div>
     <div><span>You need</span><b>≈ ${sol.toFixed(3)} SOL</b></div>`;
 }
 
