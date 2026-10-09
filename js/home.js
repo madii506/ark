@@ -5,6 +5,16 @@ import { coinCard, chip, pairChip, ghostChips, emptyBoard, tape } from './ui.js'
 const cfg = await chrome('home');
 fx();
 const LIVE = !!cfg.ca;
+/* ---------- hero contract pill ---------- */
+(() => {
+  const pill = $('#caPill'); if (!pill || !cfg.ca) return;
+  const ca = cfg.ca;
+  $('#cpFull').textContent = ca; $('#cpShort').textContent = ca.slice(0, 6) + '…' + ca.slice(-6);
+  $('#cpPump').href = 'https://pump.fun/coin/' + ca; $('#cpChart').href = 'https://dexscreener.com/solana/' + ca;
+  let tm = 0;
+  $('#cpCa').onclick = () => { copy(ca, 'Contract address copied'); pill.classList.add('ok'); $('#cpCopy').textContent = 'Copied'; clearTimeout(tm); tm = setTimeout(() => { pill.classList.remove('ok'); $('#cpCopy').textContent = 'Copy'; }, 1800); };
+  pill.hidden = false;
+})();
 const FEEP = ((cfg.feeBps != null ? cfg.feeBps : 500) / 100);
 let ARK = null, COINS = null, PAIRS = null, LIVEST = null;
 
@@ -59,10 +69,11 @@ function renderBoard() {
 }
 function renderArk() {
   const a = ARK || { live: false };
+  const CA = a.ca || cfg.ca;
   const p = a.live && a.progress != null ? a.progress : 0;
   $('#arkMain').innerHTML = `
     <span class="kick">Contract</span>
-    <div class="ca-big" id="arkCa">${a.live ? esc(a.ca) + '<i>COPY</i>' : '<span class="mu scan">Contract address</span>'}</div>
+    <div class="ca-big" id="arkCa">${CA ? esc(CA) + '<i>COPY</i>' : '<span class="mu scan">Contract address</span>'}</div>
     <div class="stat-row">
       <div class="stat"><small>Price</small><b>${a.live ? usd(a.priceUsd) : '—'}</b></div>
       <div class="stat"><small>Market cap</small><b>${a.live ? usd(a.mcapUsd) : '—'}</b></div>
@@ -71,12 +82,12 @@ function renderArk() {
     <div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
       <div class="ring" style="--p:${(p * 100).toFixed(1)}"><div><b>${a.live ? Math.round(p * 100) + '%' : '—'}</b><small>${a.venue === 'pumpswap' ? 'GRADUATED' : 'CURVE'}</small></div></div>
       <div class="grid" style="gap:10px;flex:1;min-width:200px">
-        <b style="font-size:18px">${!a.live ? 'Pre-launch' : a.venue === 'pumpswap' ? 'Trading on PumpSwap' : 'On its pump.fun curve'}</b>
-        <span class="mu" style="font-size:14px">${!a.live ? 'The contract address appears here the moment $ARK is live. Boarding opens with it.' : a.pairable ? 'Accepting new pairs: every coin launched now is priced in $ARK.' : esc(a.why || 'Not accepting pairs right now.')}</span>
-        <div class="badges">${a.live ? `<span class="tag ${a.pairable ? 'ok' : 'bad'}">${a.pairable ? '● boarding open' : '● boarding paused'}</span><a class="tag" href="https://pump.fun/coin/${esc(a.ca)}" target="_blank" rel="noopener">pump.fun ↗</a><a class="tag" href="https://dexscreener.com/solana/${esc(a.ca)}" target="_blank" rel="noopener">Dexscreener ↗</a>` : ''}${cfg.x ? `<a class="tag" href="${esc(cfg.x)}" target="_blank" rel="noopener">X ↗</a>` : ''}</div>
+        <b style="font-size:18px">${!a.live ? (CA ? 'Going live on pump.fun' : 'Pre-launch') : a.venue === 'pumpswap' ? 'Trading on PumpSwap' : 'On its pump.fun curve'}</b>
+        <span class="mu" style="font-size:14px">${!a.live ? (CA ? 'Boarding opens the moment $ARK shows up on pump.fun. Nothing to refresh.' : 'The contract address appears here the moment $ARK is live. Boarding opens with it.') : a.pairable ? 'Accepting new pairs: every coin launched now is priced in $ARK.' : esc(a.why || 'Not accepting pairs right now.')}</span>
+        <div class="badges">${a.live ? `<span class="tag ${a.pairable ? 'ok' : 'bad'}">${a.pairable ? '● boarding open' : '● boarding paused'}</span>` : ''}${CA ? `<a class="tag" href="https://pump.fun/coin/${esc(CA)}" target="_blank" rel="noopener">pump.fun ↗</a><a class="tag" href="https://dexscreener.com/solana/${esc(CA)}" target="_blank" rel="noopener">Dexscreener ↗</a>` : ''}${cfg.x ? `<a class="tag" href="${esc(cfg.x)}" target="_blank" rel="noopener">X ↗</a>` : ''}</div>
       </div>
     </div>`;
-  const ca = $('#arkCa'); if (a.live && ca) ca.onclick = () => copy(a.ca, 'Contract address copied');
+  const ca = $('#arkCa'); if (CA && ca) ca.onclick = () => copy(CA, 'Contract address copied');
 }
 async function load() {
   const [a, c] = await Promise.allSettled([api('ark'), api('coins')]);
