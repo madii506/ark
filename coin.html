@@ -17,7 +17,7 @@
 <header class="nav"><div class="nav-in">
   <a class="brand" href="/" aria-label="ARK home"><span data-amark></span>ARK</a>
   <nav class="links"><a href="/board" data-page="board">Board</a><a href="/launch" data-page="launch">Launch</a><a href="/#ark">$ARK</a><a href="/#how">How it works</a><a href="/#faq">FAQ</a></nav>
-  <div class="nav-r"><button class="ca soon" id="caChip">CA <b>soon</b></button><button class="btn wbtn" id="wBtn">Connect</button><button class="burger" aria-label="Menu"><span></span></button></div>
+  <div class="nav-r"><button class="ca" id="caChip" hidden></button><button class="btn wbtn" id="wBtn">Connect</button><button class="burger" aria-label="Menu"><span></span></button></div>
 </div></header>
 <main>
 <section class="cp">
@@ -33,7 +33,7 @@
         </div>
         <div class="card pad"><div class="fsec-h" style="margin-bottom:8px"><b>Recent trades</b><span id="trN"></span></div><div class="tr-list" id="cpTrades"></div></div>
       </div>
-      <aside class="cp-side">
+      <aside class="cp-side" data-stagger>
         <div class="card pad grid" style="gap:14px" id="tradeBox">
           <div class="seg" id="side"><button class="on" data-s="buy">Buy</button><button data-s="sell">Sell</button></div>
           <div class="seg" id="via"><button class="on" data-v="SOL">with SOL</button><button data-v="ARK">with $ARK</button></div>
@@ -49,6 +49,9 @@
   </div>
 </section>
 </main>
+<div class="band" data-band aria-hidden="true">
+  <div class="band-row"><span class="o">Paired to</span><span class="g">$ARK</span><span class="s">✦</span><span class="m">Fees to holders</span><span class="s">✦</span><span class="o">Checked at the gangway</span><span class="s">✦</span></div>
+</div>
 <footer class="foot">
   <div class="wrap">
     <div class="big-word" aria-hidden="true">ARK</div>

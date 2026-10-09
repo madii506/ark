@@ -17,14 +17,14 @@
 <header class="nav"><div class="nav-in">
   <a class="brand" href="/" aria-label="ARK home"><span data-amark></span>ARK</a>
   <nav class="links"><a href="/board" data-page="board">Board</a><a href="/launch" data-page="launch">Launch</a><a href="/#ark">$ARK</a><a href="/#how">How it works</a><a href="/#faq">FAQ</a></nav>
-  <div class="nav-r"><button class="ca soon" id="caChip">CA <b>soon</b></button><button class="btn wbtn" id="wBtn">Connect</button><button class="burger" aria-label="Menu"><span></span></button></div>
+  <div class="nav-r"><button class="ca" id="caChip" hidden></button><button class="btn wbtn" id="wBtn">Connect</button><button class="burger" aria-label="Menu"><span></span></button></div>
 </div></header>
 <main>
 <section class="lp">
   <div class="wrap">
-    <div class="sec-h" style="margin-bottom:28px"><span class="kick" id="lpKick">Boarding</span><h1 class="h2">Launch a coin.</h1><p id="lpSub">Paired to $ARK, fees to holders, checked at the gangway. Your wallet signs, nothing else touches your keys.</p></div>
+    <div class="sec-h" style="margin-bottom:28px" data-r><span class="kick" id="lpKick">Boarding</span><h1 class="h2">Launch a coin.</h1><p id="lpSub">Paired to $ARK, fees to holders, checked at the gangway. Your wallet signs, nothing else touches your keys.</p></div>
     <div class="lp-grid">
-      <form class="form" id="form" autocomplete="off" onsubmit="return false">
+      <form class="form" id="form" autocomplete="off" onsubmit="return false" data-stagger>
         <div class="card fsec">
           <div class="fsec-h"><span class="n">01</span><b>Picture</b><span>PNG · JPG · GIF · WEBP</span></div>
           <label class="drop" id="drop"><div class="pv" id="pv">512×512</div><div><b>Drop an image or click</b><span>Square works best. It becomes the coin's picture on pump.fun.</span></div><input type="file" id="file" accept="image/png,image/jpeg,image/gif,image/webp" aria-label="Coin picture"></label>
@@ -51,7 +51,7 @@
           <div class="mono mu" style="font-size:12.5px" id="vanityState"></div>
         </div>
       </form>
-      <aside class="lp-side">
+      <aside class="lp-side" data-stagger>
         <div class="pass" id="pass">
           <div class="pass-top"><span class="brand"><span data-amark></span>ARK</span><span>BOARDING PASS</span></div>
           <div class="pass-mid"><div class="pic" id="ppPic"></div><div><b id="ppSym">$TICKER</b><span id="ppName">Your coin</span></div></div>
@@ -67,6 +67,9 @@
   </div>
 </section>
 </main>
+<div class="band" data-band aria-hidden="true">
+  <div class="band-row"><span class="o">Paired to</span><span class="g">$ARK</span><span class="s">✦</span><span class="m">Fees to holders</span><span class="s">✦</span><span class="o">Checked at the gangway</span><span class="s">✦</span></div>
+</div>
 <footer class="foot">
   <div class="wrap">
     <div class="big-word" aria-hidden="true">ARK</div>

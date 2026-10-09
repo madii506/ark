@@ -17,13 +17,13 @@
 <header class="nav"><div class="nav-in">
   <a class="brand" href="/" aria-label="ARK home"><span data-amark></span>ARK</a>
   <nav class="links"><a href="/board" data-page="board">Board</a><a href="/launch" data-page="launch">Launch</a><a href="/#ark">$ARK</a><a href="/#how">How it works</a><a href="/#faq">FAQ</a></nav>
-  <div class="nav-r"><button class="ca soon" id="caChip">CA <b>soon</b></button><button class="btn wbtn" id="wBtn">Connect</button><button class="burger" aria-label="Menu"><span></span></button></div>
+  <div class="nav-r"><button class="ca" id="caChip" hidden></button><button class="btn wbtn" id="wBtn">Connect</button><button class="burger" aria-label="Menu"><span></span></button></div>
 </div></header>
 <main>
 <section class="lp">
   <div class="wrap">
-    <div class="sec-h" style="margin-bottom:28px"><span class="kick">Live from the chain</span><h1 class="h2">The board.</h1><p>Every coin launched through ARK, each one paired to $ARK. Refreshes every 15 seconds.</p></div>
-    <div class="grid g4" style="margin-bottom:26px">
+    <div class="sec-h" style="margin-bottom:28px" data-r><span class="kick">Live from the chain</span><h1 class="h2">The board.</h1><p>Every coin launched through ARK, each one paired to $ARK. Refreshes every 15 seconds.</p></div>
+    <div class="grid g4" style="margin-bottom:26px" data-stagger>
       <div class="stat card"><small>Aboard</small><b id="bsCoins">—</b></div>
       <div class="stat card"><small>$ARK locked in curves</small><b id="bsLocked">—</b></div>
       <div class="stat card"><small>Graduated</small><b id="bsGrad">—</b></div>
@@ -39,6 +39,9 @@
   </div>
 </section>
 </main>
+<div class="band" data-band aria-hidden="true">
+  <div class="band-row"><span class="o">Paired to</span><span class="g">$ARK</span><span class="s">✦</span><span class="m">Fees to holders</span><span class="s">✦</span><span class="o">Checked at the gangway</span><span class="s">✦</span></div>
+</div>
 <footer class="foot">
   <div class="wrap">
     <div class="big-word" aria-hidden="true">ARK</div>
