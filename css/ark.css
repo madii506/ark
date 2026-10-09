@@ -387,3 +387,89 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.fx [data-r]{opacity:1;transform:none}}
 .skel{background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.09),rgba(255,255,255,.04));background-size:200% 100%;animation:sk 1.4s linear infinite;border-radius:8px;color:transparent!important}
 @keyframes sk{to{background-position:-200% 0}}
+
+/* ================= motion pass ================= */
+@view-transition{navigation:auto}
+::view-transition-old(root){animation:vt-out .32s var(--ease2) both}
+::view-transition-new(root){animation:vt-in .6s var(--ease) both}
+@keyframes vt-out{to{opacity:0;transform:translateY(-12px)}}
+@keyframes vt-in{from{opacity:0;transform:translateY(16px)}}
+.ca[hidden]{display:none!important}
+
+/* split headings: words rise out of a mask */
+.splitw .w{display:inline-block;overflow:hidden;vertical-align:top;padding:0 .02em .1em;margin:0 -.02em -.1em}
+.fx .splitw .w>span{display:inline-block;transform:translateY(112%) rotate(5deg);transform-origin:0 100%;transition:transform 1.05s var(--ease);transition-delay:calc(var(--i,0) * 55ms)}
+.fx .splitw.shown .w>span,.fx .shown .splitw .w>span{transform:none}
+.splitw .gold-w{background:linear-gradient(100deg,#a97f37 0%,#d8b36a 28%,#fff0c8 46%,#d8b36a 62%,#a97f37 100%);background-size:260% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sheen 7s ease-in-out infinite}
+.hero .gold,.sheen{background:linear-gradient(100deg,#a97f37 0%,#d8b36a 28%,#fff0c8 46%,#d8b36a 62%,#a97f37 100%);background-size:260% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sheen 7s ease-in-out infinite}
+@keyframes sheen{0%,100%{background-position:100% 0}50%{background-position:0 0}}
+
+/* staggered children */
+[data-stagger]{perspective:1400px}
+.fx [data-stagger]>*{opacity:0;transform:translateY(34px) rotateX(10deg);transform-origin:50% 100%;transition:opacity .8s var(--ease),transform 1.05s var(--ease);transition-delay:calc(var(--i,0) * 75ms)}
+.fx [data-stagger].shown>*{opacity:1;transform:none}
+.fx [data-stagger].shown>*:hover{transition-delay:0s}
+
+/* cards: lift + a gold edge that runs around on hover */
+@property --ang{syntax:'<angle>';initial-value:0deg;inherits:false}
+.card::after{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;background:conic-gradient(from var(--ang),transparent 0 62%,rgba(240,213,149,.85) 76%,transparent 90%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .45s;pointer-events:none}
+.card:hover::after{opacity:1;animation:edge 2.6s linear infinite}
+@keyframes edge{to{--ang:360deg}}
+a.card:hover,.gang .card:hover,.stat.card:hover{transform:translateY(-4px)}
+.coin:hover .coin-top img,.coin:hover .coin-top .ph{transform:scale(1.06) rotate(-3deg)}
+.coin-top img,.coin-top .ph{transition:transform .6s var(--ease)}
+
+/* buttons: a shine that sweeps across */
+.btn.gold,.btn.pri{overflow:hidden}
+.btn.gold::after,.btn.pri::after{content:"";position:absolute;inset:0;border-radius:inherit;background:linear-gradient(105deg,transparent 35%,rgba(255,255,255,.55) 50%,transparent 65%);background-size:260% 100%;background-position:160% 0;transition:background-position 1s var(--ease);pointer-events:none}
+.btn.gold:hover::after,.btn.pri:hover::after{background-position:-60% 0}
+.hero-cta .btn.gold::after{animation:shine 5.5s var(--ease) 2.2s infinite}
+@keyframes shine{0%{background-position:160% 0}22%,100%{background-position:-60% 0}}
+
+/* big moving text bands */
+.band{position:relative;z-index:2;overflow:hidden;padding:clamp(22px,3vw,40px) 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);user-select:none}
+.band-row{display:flex;white-space:nowrap;gap:.5em;font:800 clamp(54px,9.5vw,148px)/1.02 Inter;letter-spacing:-.045em;will-change:transform}
+.band-row+.band-row{margin-top:.08em}
+.band-row span{flex:none}
+.band-row .o{color:rgba(243,240,232,.13)}
+.band-row .g{background:linear-gradient(100deg,#a97f37,#d8b36a 30%,#fff0c8 48%,#d8b36a 66%,#a97f37);background-size:260% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sheen 7s ease-in-out infinite}
+.band-row .s{color:var(--gold);font-size:.42em;align-self:center;transform:translateY(-.05em)}
+.band-row .m{color:var(--ink)}
+
+/* site-wide drifting dust */
+#dust{position:fixed;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;opacity:.9}
+
+/* hero extras */
+.hero-copy{will-change:transform,opacity}
+.live>div{transition:background .3s}
+.live>div:hover{background:rgba(216,179,106,.05)}
+.kick.scr{min-height:1em}
+
+/* line that draws under section heads */
+.sec-h::after{content:"";display:block;height:1px;width:0;background:linear-gradient(90deg,var(--gold),transparent);transition:width 1.4s var(--ease) .25s;margin-top:4px}
+.sec-h.shown::after{width:min(420px,70%)}
+
+/* boarding pass floats while idle */
+.pass{animation:float 6.5s ease-in-out infinite}
+.pass:hover{animation-play-state:paused}
+@keyframes float{0%,100%{translate:0 0}50%{translate:0 -7px}}
+.ck .ic.pop{animation:pop .45s var(--ease)}
+@keyframes pop{0%{transform:scale(.4)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
+.log li{animation:rise .4s var(--ease)}
+
+/* footer word sweeps */
+.big-word{background:linear-gradient(100deg,rgba(243,240,232,.08) 0%,rgba(243,240,232,.08) 40%,rgba(240,213,149,.55) 50%,rgba(243,240,232,.08) 60%,rgba(243,240,232,.08) 100%);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;will-change:letter-spacing}
+
+/* orbit ring around the route's $ARK node */
+.node.ark .orb{position:relative}
+.node.ark .orb::before{content:"";position:absolute;inset:-12px;border-radius:50%;border:1px dashed rgba(216,179,106,.45);animation:spin 18s linear infinite}
+.node .orb{transition:transform .5s var(--ease),box-shadow .4s,border-color .4s}
+.node:hover .orb{transform:scale(1.07)}
+
+/* number glow when it changes */
+.tick{animation:tick .9s var(--ease)}
+@keyframes tick{0%{color:var(--goldl);text-shadow:0 0 18px rgba(216,179,106,.6)}100%{text-shadow:none}}
+@media (prefers-reduced-motion:reduce){.band-row{transform:none!important}#dust{display:none}.pass{animation:none}}
+.fx [data-stagger].shown>.pass{transform:perspective(1100px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg))}
+.fx [data-stagger].shown>.card:hover{transform:translateY(-4px)}
+.fx [data-stagger].shown>.fsec:hover,.fx [data-stagger].shown>.card.pad:hover{transform:none}
