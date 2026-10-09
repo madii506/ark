@@ -4,19 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ARK · Coin</title>
-<meta name="description" content="A coin aboard ARK: paired to $ARK, fees to holders.">
+<meta name="description" content="A coin aboard ARK.">
 <meta name="theme-color" content="#08080a">
 <link rel="icon" href="/img/icon-32.png"><link rel="apple-touch-icon" href="/img/icon-180.png">
 <meta property="og:title" content="ARK · Coin"><meta property="og:description" content="Every coin boards in pairs."><meta property="og:image" content="https://ark-eta-neon.vercel.app/img/og.png">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://ark-eta-neon.vercel.app/img/og.png">
 <link rel="preload" href="/fonts/inter-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/css/ark.css?v=1">
+<link rel="stylesheet" href="/css/ark.css?v=3">
 </head>
 <body>
 <div class="grain" aria-hidden="true"></div>
 <header class="nav"><div class="nav-in">
   <a class="brand" href="/" aria-label="ARK home"><span data-amark></span>ARK</a>
-  <nav class="links"><a href="/board" data-page="board">Board</a><a href="/launch" data-page="launch">Launch</a><a href="/#ark">$ARK</a><a href="/#how">How it works</a><a href="/#faq">FAQ</a></nav>
+  <nav class="links"><a href="/board" data-page="board">Board</a><a href="/launch" data-page="launch">Launch</a><a href="/#pairs">Pairs</a><a href="/#ark">$ARK</a><a href="/#how">How it works</a><a href="/docs" data-page="docs">Docs</a><a href="/#faq">FAQ</a></nav>
   <div class="nav-r"><button class="ca" id="caChip" hidden></button><button class="btn wbtn" id="wBtn">Connect</button><button class="burger" aria-label="Menu"><span></span></button></div>
 </div></header>
 <main>
@@ -26,7 +26,7 @@
     <div class="cp-grid">
       <div class="grid" style="gap:16px">
         <div class="grid g4" id="cpStats"></div>
-        <div class="card pad"><div class="fsec-h" style="margin-bottom:10px"><b>Price in $ARK</b><span id="chartNote">recent trades</span></div><div class="chart" id="chart"><canvas id="chartCv"></canvas><div class="tip" id="tip"></div></div></div>
+        <div class="card pad"><div class="fsec-h" style="margin-bottom:10px"><b id="chartTitle">Price</b><span id="chartNote">recent trades</span></div><div class="chart" id="chart"><canvas id="chartCv"></canvas><div class="tip" id="tip"></div></div></div>
         <div class="grid g2">
           <div class="card pad"><div class="fsec-h" style="margin-bottom:8px"><b>Holder rewards</b><span>pump.fun</span></div><div id="cpRewards"></div></div>
           <div class="card pad"><div class="fsec-h" style="margin-bottom:4px"><b>Verified on-chain</b><span>live</span></div><ul class="checks" id="cpChecks"></ul></div>
@@ -36,7 +36,7 @@
       <aside class="cp-side" data-stagger>
         <div class="card pad grid" style="gap:14px" id="tradeBox">
           <div class="seg" id="side"><button class="on" data-s="buy">Buy</button><button data-s="sell">Sell</button></div>
-          <div class="seg" id="via"><button class="on" data-v="SOL">with SOL</button><button data-v="ARK">with $ARK</button></div>
+          <div class="seg" id="via"><button class="on" data-v="SOL">with SOL</button><button data-v="PAIR">with $PAIR</button></div>
           <div class="inrow"><input id="amt" inputmode="decimal" value="0.1" aria-label="Amount"><span class="unit" id="amtUnit">SOL</span></div>
           <div class="quick" id="quick"></div>
           <div class="sum"><div><span>You get about</span><b id="qOut">—</b></div><div><span>Route</span><b id="qRoute">—</b></div><div><span>Slippage</span><b><select id="slip" class="mono" style="background:transparent;border:0;color:inherit"><option>1</option><option selected>5</option><option>10</option><option>20</option></select>%</b></div></div>
@@ -55,10 +55,9 @@
 <footer class="foot">
   <div class="wrap">
     <div class="big-word" aria-hidden="true">ARK</div>
-    <p class="disc">ARK is an independent interface for pump.fun's public programs and is not affiliated with pump.fun. Nothing here is financial advice. Memecoins can go to zero.</p>
   </div>
 </footer>
 <script src="/vendor/solana-lite.js" defer></script>
-<script type="module" src="/js/coin.js?v=1"></script>
+<script type="module" src="/js/coin.js?v=3"></script>
 </body>
 </html>

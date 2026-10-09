@@ -4,19 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ARK · Board</title>
-<meta name="description" content="Every coin launched through ARK, paired to $ARK, read from the chain.">
+<meta name="description" content="Every coin launched through ARK, read from the chain.">
 <meta name="theme-color" content="#08080a">
 <link rel="icon" href="/img/icon-32.png"><link rel="apple-touch-icon" href="/img/icon-180.png">
 <meta property="og:title" content="ARK · Board"><meta property="og:description" content="Every coin boards in pairs."><meta property="og:image" content="https://ark-eta-neon.vercel.app/img/og.png">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://ark-eta-neon.vercel.app/img/og.png">
 <link rel="preload" href="/fonts/inter-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/css/ark.css?v=1">
+<link rel="stylesheet" href="/css/ark.css?v=3">
 </head>
 <body>
 <div class="grain" aria-hidden="true"></div>
 <header class="nav"><div class="nav-in">
   <a class="brand" href="/" aria-label="ARK home"><span data-amark></span>ARK</a>
-  <nav class="links"><a href="/board" data-page="board">Board</a><a href="/launch" data-page="launch">Launch</a><a href="/#ark">$ARK</a><a href="/#how">How it works</a><a href="/#faq">FAQ</a></nav>
+  <nav class="links"><a href="/board" data-page="board">Board</a><a href="/launch" data-page="launch">Launch</a><a href="/#pairs">Pairs</a><a href="/#ark">$ARK</a><a href="/#how">How it works</a><a href="/docs" data-page="docs">Docs</a><a href="/#faq">FAQ</a></nav>
   <div class="nav-r"><button class="ca" id="caChip" hidden></button><button class="btn wbtn" id="wBtn">Connect</button><button class="burger" aria-label="Menu"><span></span></button></div>
 </div></header>
 <main>
@@ -32,7 +32,7 @@
     <div class="bar-ctl">
       <input class="inp" id="q" placeholder="Search ticker, name or address" aria-label="Search">
       <div class="seg" id="sort"><button class="on" data-s="mcap">Market cap</button><button data-s="new">Newest</button><button data-s="prog">Progress</button><button data-s="locked">$ARK locked</button></div>
-      <div class="seg" id="filt"><button class="on" data-f="all">All</button><button data-f="curve">On curve</button><button data-f="grad">Graduated</button></div>
+      <div class="seg" id="filt"><button class="on" data-f="all">All</button><button data-f="ark">$ARK pairs</button><button data-f="other">Other pairs</button><button data-f="curve">On curve</button><button data-f="grad">Graduated</button></div>
       <div class="seg" id="view" style="margin-left:auto"><button class="on" data-v="grid">Cards</button><button data-v="table">Table</button></div>
     </div>
     <div id="list"></div>
@@ -45,10 +45,9 @@
 <footer class="foot">
   <div class="wrap">
     <div class="big-word" aria-hidden="true">ARK</div>
-    <p class="disc">ARK is an independent interface for pump.fun's public programs and is not affiliated with pump.fun. Nothing here is financial advice. Memecoins can go to zero.</p>
   </div>
 </footer>
 <script src="/vendor/solana-lite.js" defer></script>
-<script type="module" src="/js/board.js?v=1"></script>
+<script type="module" src="/js/board.js?v=3"></script>
 </body>
 </html>

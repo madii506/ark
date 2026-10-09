@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARK · Docs</title>
+<meta name="description" content="How ARK works: pairs, holder rewards, the gangway, and the public API.">
+<meta name="theme-color" content="#08080a">
+<link rel="icon" href="/img/icon-32.png"><link rel="apple-touch-icon" href="/img/icon-180.png">
+<meta property="og:title" content="ARK · Docs"><meta property="og:image" content="https://ark-eta-neon.vercel.app/img/og.png">
+<link rel="preload" href="/fonts/inter-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/css/ark.css?v=3">
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="/" aria-label="ARK home"><span data-amark></span>ARK</a>
+  <nav class="links"><a href="/board" data-page="board">Board</a><a href="/launch" data-page="launch">Launch</a><a href="/#pairs">Pairs</a><a href="/#ark">$ARK</a><a href="/#how">How it works</a><a href="/docs" data-page="docs">Docs</a><a href="/#faq">FAQ</a></nav>
+  <div class="nav-r"><button class="ca" id="caChip" hidden></button><button class="btn wbtn" id="wBtn">Connect</button><button class="burger" aria-label="Menu"><span></span></button></div>
+</div></header>
+<main>
+<section class="lp">
+  <div class="wrap">
+    <div class="sec-h" style="margin-bottom:34px" data-r><span class="kick">Docs</span><h1 class="h2">How ARK works.</h1><p>Everything ARK does, on-chain and off. The numbers on this page are read live from pump.fun and from ARK's own settings.</p></div>
+    <div class="docs">
+      <nav class="toc" id="toc"><a href="#overview">Overview</a><a href="#flow">Launch flow</a><a href="#chain">On-chain settings</a><a href="#pairs">Pairs</a><a href="#fees">Fees</a><a href="#rewards">Holder rewards</a><a href="#rules">Gangway rules</a><a href="#verify">Verify a coin</a><a href="#api">Public API</a><a href="#addresses">Programs</a><a href="#notes">Good to know</a></nav>
+      <div class="doc">
+        <section id="overview"><h2>Overview</h2><p>ARK is a launchpad on top of pump.fun. A coin launched here is an ordinary pump.fun coin created with two settings fixed for good: it is <b>paired</b> to $ARK, or to another pump.fun coin you choose, and it is a <b>holder-reward coin</b>, so 100% of its creator fees go to the people holding it.</p><p>ARK never holds keys or funds. The server builds each transaction with pump.fun's official SDK, simulates it on-chain, and your wallet signs it.</p></section>
+        <section id="flow"><h2>Launch flow</h2><ol><li>Your picture and metadata go to pump.fun's IPFS endpoint, the same one pump.fun's own site uses.</li><li>ARK builds the create transaction (<code>create_v2</code>) with the pair and holder rewards set, plus a memo and the ARK registry tag, and simulates it.</li><li>You sign. If the address search found a key ending in "ark", your browser adds that signature for the new mint.</li><li>If you chose a dev buy, a second transaction swaps SOL → pair → your coin through pump.fun's multi-hop swap, capped at <b data-v="devMaxSol">1</b> SOL.</li><li>The coin shows up on the board as soon as the registry sees it.</li></ol></section>
+        <section id="chain"><h2>On-chain settings</h2><dl class="kv"><dt>quote_mint</dt><dd>the pair: $ARK by default, or the pump.fun coin you picked</dd><dt>is_holder_reward</dt><dd><code>true</code>: the creator becomes the coin's holder-rewards account</dd><dt>mayhem_mode</dt><dd><code>false</code></dd><dt>memo</dt><dd><code>ark:v1:&lt;TICKER&gt;</code></dd><dt>registry</dt><dd><code data-v="registry">…</code> (read-only account in every launch, no private key)</dd></dl></section>
+        <section id="pairs"><h2>Pairs</h2><p>$ARK is the main pair. Any other pump.fun coin can be a pair when all of these hold, checked on-chain at the moment you launch:</p><ul><li>it is itself paired to SOL (pump.fun allows <b data-v="maxCurveDepth">1</b> level of pairing),</li><li>it is not a mayhem-mode coin,</li><li>it is still on its bonding curve, or it graduated into a PumpSwap pool, so SOL can be routed through it.</li></ul><p>Coins that left pump.fun for Raydium before PumpSwap existed have no pump.fun pool to route through, so they can't be a pair.</p></section>
+        <section id="fees"><h2>Fees</h2><dl class="kv"><dt>pump.fun protocol</dt><dd><b data-v="protocol">…</b> of each trade</dd><dt>creator fee</dt><dd><b data-v="creator">…</b> of each trade, paid to holders</dd><dt>ARK</dt><dd>none</dd><dt>network</dt><dd>normal Solana fees, shown before you sign</dd></dl></section>
+        <section id="rewards"><h2>Holder rewards</h2><p>Because the creator of every ARK coin is its holder-rewards account, creator fees build up there instead of in a wallet. pump.fun collects them and pays them out to the coin's holders, in the pair coin. Each coin page shows what is waiting and what has been paid, read from the chain.</p></section>
+        <section id="rules"><h2>Gangway rules</h2><ul><li>Two coins per ticker at most (<b data-v="perTicker">2</b>).</li><li>Up to <b data-v="perWallet">50</b> launches per wallet per day.</li><li>Dev buy up to <b data-v="devMaxSol">1</b> SOL.</li><li>No major tickers, and no ticker already worth $1M+ on Solana.</li><li>A real picture: PNG, JPG, GIF or WEBP, not a copy of a coin already aboard.</li><li>Links checked for format, and the website has to load.</li><li>Descriptions that promise returns get flagged.</li></ul></section>
+        <section id="verify"><h2>Verify a coin</h2><ol><li>Open the coin's page on ARK: the "Verified on-chain" list re-reads its bonding curve every few seconds.</li><li>Or check it yourself: the bonding curve's <code>quote_mint</code> is the pair and <code>is_holder_reward</code> is true.</li><li>Its create transaction contains the memo <code>ark:v1:&lt;TICKER&gt;</code> and the registry account.</li></ol></section>
+        <section id="api"><h2>Public API</h2><p>Read-only endpoints, no key needed:</p><pre>GET /api/config        settings + pump.fun switches + fees
+GET /api/ark           $ARK price, market cap, curve, pairable
+GET /api/pairs         $ARK + real pump.fun coins that can be a pair now
+GET /api/pair?m=MINT   can this coin be a pair?
+GET /api/coins         every coin launched through ARK
+GET /api/coin?m=MINT   one coin: curve, checks, rewards, holders, trades
+GET /api/live          pump.fun right now</pre></section>
+        <section id="addresses"><h2>Programs</h2><dl class="kv"><dt>pump.fun</dt><dd><code>6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P</code></dd><dt>PumpSwap</dt><dd><code>pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA</code></dd><dt>Memo</dt><dd><code>MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr</code></dd><dt>$ARK</dt><dd><code data-v="ca">at launch</code></dd><dt>Code</dt><dd><a class="gold" href="https://github.com/madii506/ark" target="_blank" rel="noopener">github.com/madii506/ark</a></dd></dl></section>
+        <section id="notes"><h2>Good to know</h2><ul><li>Pairing is final: a coin stays paired to the coin it launched with.</li><li>The dev buy is its own transaction, sent right after the create.</li><li>pump.fun sets the minimum holding for holder rewards and the payout timing.</li><li>Buying a coin with SOL goes through its pair in the same transaction, so price moves in the pair affect the route.</li></ul></section>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+<div class="band" data-band aria-hidden="true">
+  <div class="band-row"><span class="o">Paired to</span><span class="g">$ARK</span><span class="s">✦</span><span class="m">Fees to holders</span><span class="s">✦</span><span class="o">Checked at the gangway</span><span class="s">✦</span></div>
+</div>
+<footer class="foot">
+  <div class="wrap">
+    <div class="big-word" aria-hidden="true">ARK</div>
+  </div>
+</footer>
+<script type="module" src="/js/docs.js?v=3"></script>
+</body>
+</html>
