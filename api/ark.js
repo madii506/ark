@@ -113,7 +113,11 @@ async function cached(key, ms, fn) {
 const conns = RPCS.map(u => new Connection(u, { commitment: 'confirmed', disableRetryOnRateLimit: true, fetch: timedFetch(9000) }));
 async function rpc(fn) {
   let last;
-  for (const c of conns) { try { return await fn(c); } catch (e) { last = e; if (e && e.sdk) throw e; } }
+  for (let round = 0; round < 2; round++) {
+    for (const c of conns) { try { return await fn(c); } catch (e) { last = e; if (e && e.sdk) throw e; } }
+    if (!/429|Too many|rate/i.test(String(last && last.message))) break;
+    await new Promise(r => setTimeout(r, 600));
+  }
   throw http(502, 'Solana RPC is busy: ' + String(last && last.message || last).slice(0, 160));
 }
 // SDK calls that may throw a typed refusal (not an RPC problem): don't retry those on another node
@@ -129,13 +133,18 @@ async function sdkCall(fn) {
  * and public nodes allow one getTransaction per batch, so these go one by one, a few at a time. */
 async function rawRpc(method, params, ms = 9000) {
   let last;
-  for (const u of RPCS) {
-    try {
-      const r = await timedFetch(ms)(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
-      const j = await r.json();
-      if (j.error) throw new Error(j.error.message || 'rpc error');
-      return j.result;
-    } catch (e) { last = e; }
+  for (let round = 0; round < 2; round++) {
+    for (const u of RPCS) {
+      try {
+        const r = await timedFetch(ms)(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+        if (r.status === 429) throw new Error('429 Too many requests');
+        const j = await r.json();
+        if (j.error) throw new Error(j.error.message || 'rpc error');
+        return j.result;
+      } catch (e) { last = e; }
+    }
+    if (!/429|Too many|rate/i.test(String(last && last.message))) break;
+    await new Promise(r => setTimeout(r, 500));
   }
   throw http(502, 'Solana RPC is busy: ' + String(last && last.message || last).slice(0, 160));
 }
@@ -900,6 +909,20 @@ async function recentPumpCoins(limit = 120) {
   }
   return { creates, trades, seen };
 }
+async function holderFromTrades(mint, prog, trades, minSol = 0.03) {
+  const users = [...new Set((trades || []).filter(t => t.mint.equals(mint) && t.isBuy).map(t => t.user.toBase58()))].slice(0, 30);
+  if (!users.length) return null;
+  const owners = users.map(u => new PublicKey(u));
+  const atas = owners.map(o => quoteAta(o, mint, prog));
+  const infos = await rpc(c => c.getMultipleAccountsInfo([...owners, ...atas]));
+  for (let i = 0; i < owners.length; i++) {
+    const oi = infos[i], ai = infos[owners.length + i];
+    if (!oi || !oi.owner.equals(SystemProgram.programId) || oi.lamports < minSol * 1e9 || !ai) continue;
+    const acc = safe(() => unpackAccount(atas[i], ai, prog)); if (!acc || acc.amount === 0n) continue;
+    return { owner: owners[i], amount: new BN(acc.amount.toString()) };
+  }
+  return null;
+}
 async function holderWith(mint, minSol = 0.08) {
   const largest = await rpc(c => c.getTokenLargestAccounts(mint));
   const accs = largest.value.slice(0, 15);
@@ -923,7 +946,7 @@ async function lab(qs) {
   if (!qMint || qs.get('route')) {
     recent = await recentPumpCoins(Number(qs.get('scan')) || 150);
     const count = {};
-    for (const t of recent.trades) if (t.quoteMint.equals(PublicKey.default) && !t.mayhemMode) { const k = t.mint.toBase58(); count[k] = (count[k] || 0) + 1; }
+    for (const t of recent.trades) if (t.quoteMint.equals(PublicKey.default) && !t.mayhemMode && t.isBuy) { const k = t.mint.toBase58(); count[k] = (count[k] || 0) + 1; }
     const ranked = Object.entries(count).sort((a, b) => b[1] - a[1]).map(e => e[0]);
     const paired = recent.trades.filter(t => !t.quoteMint.equals(PublicKey.default) && t.quoteMint.toBase58() !== USDC).map(t => ({ mint: t.mint.toBase58(), quote: t.quoteMint.toBase58(), holderReward: !t.holderRewardsBps.isZero() }));
     recent.paired = paired;
@@ -951,8 +974,12 @@ async function lab(qs) {
   } catch (e) { step('create', { ok: false, error: String(e.message || e).slice(0, 300) }); }
   // 2. create + first buy, paid in the quote coin, signed by a real holder of it
   try {
-    const h = await holderWith(qMint);
-    if (!h) step('createBuy', { ok: false, note: 'no holder of the quote coin with SOL found' });
+    const forced = qs.get('holder') ? pk(qs.get('holder'), 'holder') : null;
+    let h = null;
+    if (forced) { const ata = quoteAta(forced, qMint, q.quoteTokenProgram); const [ai] = await rpc(c => c.getMultipleAccountsInfo([ata])); const acc = ai ? safe(() => unpackAccount(ata, ai, q.quoteTokenProgram)) : null; if (acc && acc.amount > 0n) h = { owner: forced, amount: new BN(acc.amount.toString()) }; }
+    if (!h && recent) h = await holderFromTrades(qMint, q.quoteTokenProgram, recent.trades);
+    if (!h && qs.get('deep')) h = await holderWith(qMint);
+    if (!h) step('createBuy', { ok: false, note: 'no holder of the quote coin with SOL found among recent buyers', buyers: recent ? recent.trades.filter(t => t.mint.equals(qMint) && t.isBuy).length : 0 });
     else {
       const qa = BN.min(h.amount.divn(50), new BN(String(5e11)));
       const dm = getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: null, bondingCurve: null, amount: qa, quoteMint: qMint, pumpQuote: q.pumpQuote ? q.pumpQuote.curve : undefined });
@@ -975,7 +1002,14 @@ async function lab(qs) {
   } catch (e) { step('fund', { ok: false, error: String(e.message || e).slice(0, 300) }); }
   // 4. SOL -> quote -> a coin already paired to it (if the scan saw one), the route every ARK buy takes
   try {
-    const paired = recent && recent.paired && recent.paired[0];
+    let paired = null;
+    const quotes = [...new Set(((recent && recent.paired) || []).map(p => p.quote))].slice(0, 8);
+    if (quotes.length) {
+      const infos = await rpc(c => c.getMultipleAccountsInfo(quotes.map(qq => bondingCurvePda(new PublicKey(qq)))));
+      const okq = quotes.filter((qq, i) => infos[i] && infos[i].owner.equals(PUMP_PROGRAM_ID));
+      paired = recent.paired.find(p => okq.includes(p.quote)) || null;
+      step('pairedScan', { quotes: quotes.length, pumpQuotes: okq });
+    }
     if (paired) {
       const { hops, out: o } = await routeOut({ path: [SOL, new PublicKey(paired.quote), new PublicKey(paired.mint)], side: 'buy', amountIn: toUnits(0.05, 9), user: await quoter() });
       step('route2', { ok: true, coin: paired.mint, quote: paired.quote, venues: hops.map(h => h.venue), out: toUi(o) });
@@ -1006,6 +1040,11 @@ module.exports = async (req, res) => {
     if (path === 'status') return send(res, 200, { ok: true, ...(await status(q.get('sig'))) });
     if (path === 'img') return await img(req, res, q.get('u'));
     if (path === 'lab') return send(res, 200, { ok: true, ...(await lab(q)) });
+    if (path === 'bal') {
+      const u = pk(q.get('u'), 'wallet'), m = q.get('m') ? pk(q.get('m'), 'mint') : null;
+      const [sol, token, ark] = await Promise.all([rpc(c => c.getBalance(u)).then(x => x / 1e9).catch(() => null), m ? tokenBalance(u, m).catch(() => null) : null, ARK ? tokenBalance(u, ARK).catch(() => null) : null]);
+      return send(res, 200, { ok: true, sol, token, ark });
+    }
     if (req.method === 'POST') {
       const b = await readBody(req);
       if (path === 'check') return send(res, 200, { ok: true, ...(await check(b)) });
