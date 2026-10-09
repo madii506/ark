@@ -616,9 +616,9 @@ function pathFor(mint, side, via, quote) {
   if (side === 'buy') return via === 'PAIR' ? [quote, mint] : [SOL, quote, mint];
   return via === 'PAIR' ? [mint, quote] : [mint, quote, SOL];
 }
-async function feeIxs(user, units, inSol, tokenMint) {
-  if (!feeBps() || units.isZero()) return [];
-  const to = new PublicKey(FEE_WALLET);
+async function feeIxs(user, units, inSol, tokenMint, feeTo = FEE_WALLET) {
+  if (!feeTo || units.isZero()) return [];
+  const to = new PublicKey(feeTo);
   if (inSol) return [SystemProgram.transfer({ fromPubkey: user, toPubkey: to, lamports: BigInt(units.toString()) })];
   const prog = await sdkCall(s => s.fetchQuoteTokenProgram(tokenMint));
   const from = getAssociatedTokenAddressSync(tokenMint, user, true, prog), dest = getAssociatedTokenAddressSync(tokenMint, to, true, prog);
@@ -945,7 +945,7 @@ async function build(b) {
 }
 
 /* ---------------- trades routed through $ARK ---------------- */
-async function trade(b) {
+async function trade(b, opt = {}) {
   if (!ARK) throw http(403, 'Trading opens when $ARK is live.');
   const user = pk(b.user, 'wallet'), mint = pk(b.mint, 'mint');
   const side = b.side === 'sell' ? 'sell' : 'buy', via = b.via === 'PAIR' || b.via === 'ARK' ? 'PAIR' : 'SOL';
@@ -954,15 +954,15 @@ async function trade(b) {
   const qm = await quoteOf(mint), direct = qm.equals(PublicKey.default);
   const inDec = side === 'buy' && (via === 'SOL' || direct) ? 9 : DEC, outDec = side === 'sell' && (via === 'SOL' || direct) ? 9 : DEC;
   const path = pathFor(mint, side, via, qm);
-  const bps = feeBps();
+  const bps = opt.feeTo ? FEE_BPS : feeBps(), feeTo = opt.feeTo || FEE_WALLET;
   const inSol = side === 'buy' && (via === 'SOL' || direct), outSol = side === 'sell' && (via === 'SOL' || direct);
   let amountIn = toUnits(amount, inDec), pre = [], post = [], fee = 0;
-  if (bps && side === 'buy') { const f = amountIn.muln(bps).divn(10000); amountIn = amountIn.sub(f); fee = toUi(f, inDec); pre = await feeIxs(user, f, inSol, inSol ? null : qm); }
+  if (bps && side === 'buy') { const f = amountIn.muln(bps).divn(10000); amountIn = amountIn.sub(f); fee = toUi(f, inDec); pre = await feeIxs(user, f, inSol, inSol ? null : qm, feeTo); }
   const { hops, out } = await routeOut({ path, side, amountIn, user });
   const minOut = out.mul(new BN(Math.round((1 - slip) * 10000))).div(new BN(10000));
   const ixs = await PUMP_SDK.multiHopSwapInstructions({ user, hops, side, amountIn, minAmountOut: minOut });
   let net = out;
-  if (bps && side === 'sell') { const f = minOut.muln(bps).divn(10000); net = out.sub(out.muln(bps).divn(10000)); fee = toUi(f, outDec); post = await feeIxs(user, f, outSol, outSol ? null : qm); }
+  if (bps && side === 'sell') { const f = minOut.muln(bps).divn(10000); net = out.sub(out.muln(bps).divn(10000)); fee = toUi(f, outDec); post = await feeIxs(user, f, outSol, outSol ? null : qm, feeTo); }
   const f = await finalize(user, [...pre, ...ixs, ...post], [], 1_400_000);
   return { ...f, out: toUi(net, outDec), min: toUi(minOut, outDec), fee, feeBps: bps, venues: hops.map(h => h.venue), path: path.map(p => p.toBase58()) };
 }
@@ -1036,7 +1036,20 @@ async function holderWith(mint, minSol = 0.08) {
   for (let i = 0; i < owners.length; i++) if (oi[i] && oi[i].owner.equals(SystemProgram.programId) && oi[i].lamports > minSol * 1e9 && owners[i].amount.gtn(0)) return owners[i];
   return null;
 }
+// simulate trades with the fee on, paid to a given wallet (nothing is signed or sent)
+async function feeTest(qs) {
+  const user = qs.get('user') ? pk(qs.get('user'), 'user') : await quoter();
+  const wallet = qs.get('wallet') || QUOTERS.find(k => k !== user.toBase58());
+  const mints = String(qs.get('feetest')).split(',').filter(Boolean).slice(0, 4);
+  const out = [];
+  for (const m of mints) for (const via of ['SOL', 'PAIR']) {
+    try { const r = await trade({ user: user.toBase58(), mint: m, side: 'buy', via, amount: Number(qs.get('amount')) || 0.02, slippage: 5 }, { feeTo: wallet }); out.push({ mint: m, via, ok: true, bytes: r.bytes, units: r.units, fee: r.fee, out: r.out, venues: r.venues }); }
+    catch (e) { out.push({ mint: m, via, ok: false, error: String(e.message || e).slice(0, 220), logs: e.logs ? e.logs.slice(-4) : undefined }); }
+  }
+  return { feeBps: FEE_BPS, wallet, user: user.toBase58(), out };
+}
 async function lab(qs) {
+  if (qs.get('feetest')) return await feeTest(qs);
   const t0 = Date.now();
   const { global, feeConfig } = await pumpState();
   const out = {
