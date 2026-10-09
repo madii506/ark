@@ -48,7 +48,7 @@ const okKey = s => { try { return s ? new PublicKey(s).toBase58() : ''; } catch 
 const num = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
 const MEMO = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 const REGISTRY = PublicKey.findProgramAddressSync([Buffer.from('ark-registry-v1')], MEMO)[0];
-const ARK_CA = okKey(E('ARK_CA'));
+const ARK_CA = okKey(E('ARK_CA') || '9RjWQBrFkK7xeT5hT6qvAqKMQaLsZp4Pov4HNZNipump');
 const ARK = ARK_CA ? new PublicKey(ARK_CA) : null;
 const CONFIG = {
   ca: ARK_CA,
@@ -457,6 +457,7 @@ async function pairs() {
 async function resolvePair(pairStr) {
   const m = pairStr ? pk(pairStr, 'pair') : ARK;
   if (!m) throw http(403, 'Boarding opens when $ARK is live.');
+  if (ARK && m.equals(ARK) && !(await arkInfo().catch(() => ({ live: false }))).live) throw http(403, 'Boarding opens the moment $ARK is live on pump.fun.');
   const [st] = await pairStatus([m]);
   if (!st.ok) throw http(400, (ARK && m.equals(ARK) ? '$ARK' : 'That coin') + ' cannot be a pair right now: ' + st.why);
   const q = await sdkCall(s => s.resolveQuoteMint(m)).catch(e => { throw http(409, friendly(e)); });
@@ -774,6 +775,7 @@ async function check(b) {
   // 1. the pair: $ARK unless another pump.fun coin was picked
   const pairStr = b.pair && b.pair !== ARK_CA ? String(b.pair) : null;
   if (!ARK) add('pair', 'Pair', 'wait', 'Boarding opens when $ARK is live.');
+  else if (!pairStr && !(await arkInfo().catch(() => ({ live: false }))).live) add('pair', 'Paired to $ARK', 'wait', 'Boarding opens the moment $ARK is live on pump.fun.');
   else {
     try {
       const m = pairStr ? pk(pairStr, 'pair') : ARK;
