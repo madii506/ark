@@ -793,51 +793,59 @@ async function buildLaunch(b) {
   const uri = clean(b.uri, 200);
   if (!/^https:\/\/\S+$/.test(uri)) throw http(400, 'Upload the picture first.');
   const slipPct = Math.max(0.5, Math.min(30, Number(b.slippage) || 5));
-  const { global, feeConfig } = await pumpState();
+  const via = b.devVia === 'ARK' ? 'ARK' : 'SOL';
+  const dev = Math.max(0, Number(b.dev) || 0);
+  const { global } = await pumpState();
   if (global.createV2Enabled === false) throw http(503, 'pump.fun has paused new coins right now.');
   if (!global.isHolderRewardEnabled) throw http(503, 'pump.fun has holder rewards switched off right now.');
   await rules(user, symbol);
   const q = await arkQuote();
+  // the dev buy must fit under the cap before anything is created
+  let devArk = 0;
+  if (dev > 0) {
+    if (via === 'SOL') { const { out } = await routeOut({ path: [SOL, ARK], side: 'buy', amountIn: toUnits(dev, 9), user }); devArk = toUi(out); }
+    else { const have = await tokenBalance(user, ARK).catch(() => 0); if (have + 1e-9 < dev) throw http(400, `The wallet holds ${fmtNum(have)} $ARK, the dev buy needs ${fmtNum(dev)}.`); devArk = dev; }
+    const dm = await devMath(q, toUnits(devArk));
+    if (dm.pct > CONFIG.devCapPct + 1e-9) throw http(400, `That dev buy is ${dm.pct.toFixed(2)}% of supply. The cap is ${CONFIG.devCapPct}% (about ${fmtNum(dm.maxArk)} $ARK).`);
+  }
   const extra = [pairingMemo(symbol), registryTag(user)];
   const base = { mint, name, symbol, uri, creator: user, user, mayhemMode: false, quoteMint: ARK, quoteTokenProgram: q.quoteTokenProgram, holderReward: true, pumpQuote: q.pumpQuote ? q.pumpQuote.accounts : undefined };
-  const createIx = await PUMP_SDK.createV2Instruction(base);
-  let budget = Math.max(0, Number(b.ark) || 0);
-  if (budget > 0) { const have = await tokenBalance(user, ARK).catch(() => 0); budget = Math.min(budget, have); }
-  let plan = [createIx, ...extra], alts = [], followUp = null, dev = null;
-  if (budget > 0) {
-    // spend at most `budget` $ARK: quote the tokens for budget/(1+slip) and let the builder add the slippage back on top
-    const qa = toUnits(budget / (1 + slipPct / 100));
+  let plan = [await PUMP_SDK.createV2Instruction(base), ...extra], alts = [], followUp = null, dev1 = null;
+  if (dev > 0 && via === 'ARK') {
+    // paid in $ARK: try create + first buy in one transaction (needs a lookup table to fit)
+    const { feeConfig } = await pumpState();
+    const qa = toUnits(dev / (1 + slipPct / 100));
     const dm = await devMath(q, qa);
-    if (dm.pct > CONFIG.devCapPct + 1e-9) throw http(400, `That dev buy is ${dm.pct.toFixed(2)}% of supply. The cap is ${CONFIG.devCapPct}% (about ${fmtNum(dm.maxArk)} $ARK).`);
-    dev = { ark: budget, tokens: toUi(dm.tokens), pct: dm.pct };
     const cb = [...await PUMP_SDK.createV2AndBuyV2Instructions({ global, ...base, amount: dm.tokens, quoteAmount: qa, slippage: slipPct }), ...extra];
+    void feeConfig;
     const { blockhash } = await rpc(c => c.getLatestBlockhash('confirmed'));
     const price = await priorityFee();
     if (tryCompile(user, cb, 1_000_000, price, blockhash)) plan = cb;
-    else { const found = await pickAlts(cb, user, price, blockhash); if (found) { plan = cb; alts = found; } else followUp = 'devbuy'; }
+    else { const found = await pickAlts(cb, user, price, blockhash); if (found) { plan = cb; alts = found; } }
+    if (plan === cb) dev1 = { ark: dev, tokens: toUi(dm.tokens), pct: dm.pct };
   }
+  if (dev > 0 && !dev1) followUp = { via, amount: dev };
   const f = await finalize(user, plan, alts, 1_000_000);
-  return { ...f, step: 'launch', memo: `ark:v1:${symbol}`, registry: REGISTRY.toBase58(), dev: followUp ? null : dev, followUp, followArk: followUp ? budget : 0, alts: alts.map(t => t.key.toBase58()) };
+  return { ...f, step: 'launch', memo: `ark:v1:${symbol}`, registry: REGISTRY.toBase58(), dev: dev1, followUp, alts: alts.map(t => t.key.toBase58()) };
 }
-// the dev buy as its own transaction, only when create + buy can't fit in one
+// the first buy right after the create: SOL -> $ARK -> coin, or $ARK -> coin, through pump.fun's multi-hop swap
 async function buildDevBuy(b) {
   gate();
   const user = pk(b.user, 'wallet'), mint = pk(b.mint, 'mint');
-  const slipPct = Math.max(0.5, Math.min(30, Number(b.slippage) || 5));
-  let budget = Math.max(0, Number(b.ark) || 0);
-  const have = await tokenBalance(user, ARK).catch(() => 0); budget = Math.min(budget, have);
-  if (!(budget > 0)) throw http(400, 'No $ARK in the wallet for the dev buy.');
-  const { global, feeConfig } = await pumpState();
-  const st = await sdkCall(s => s.fetchBuyState(mint, user, TOKEN_2022_PROGRAM_ID, ARK));
-  if (st.bondingCurve.complete) throw http(400, 'This coin has already left the bonding curve.');
-  if (!st.bondingCurve.quoteMint.equals(ARK)) throw http(400, 'This coin is not paired to $ARK.');
-  const qa = toUnits(budget / (1 + slipPct / 100));
-  const amount = getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: st.bondingCurve.tokenTotalSupply, bondingCurve: st.bondingCurve, amount: qa, quoteMint: ARK });
-  const pct = Number(amount.toString()) / SUPPLY_UNITS * 100;
-  if (pct > CONFIG.devCapPct + 1e-9) throw http(400, `That dev buy is ${pct.toFixed(2)}% of supply. The cap is ${CONFIG.devCapPct}%.`);
-  const ixs = await PUMP_SDK.buyV2Instructions({ global, bondingCurveAccountInfo: st.bondingCurveAccountInfo, bondingCurve: st.bondingCurve, associatedUserAccountInfo: st.associatedUserAccountInfo, mint, user, amount, quoteAmount: qa, slippage: slipPct, tokenProgram: TOKEN_2022_PROGRAM_ID, quoteTokenProgram: st.quoteTokenProgram });
-  const f = await finalize(user, ixs, [], 600_000);
-  return { ...f, step: 'devbuy', dev: { ark: budget, tokens: toUi(amount), pct } };
+  const slip = Math.max(0.5, Math.min(30, Number(b.slippage) || 5)) / 100;
+  const via = b.via === 'ARK' ? 'ARK' : 'SOL';
+  let amount = Math.max(0, Number(b.amount) || 0);
+  if (via === 'ARK') { const have = await tokenBalance(user, ARK).catch(() => 0); amount = Math.min(amount, have); }
+  if (!(amount > 0)) throw http(400, 'Nothing to buy with.');
+  const path = via === 'SOL' ? [SOL, ARK, mint] : [ARK, mint];
+  const amountIn = toUnits(amount, via === 'SOL' ? 9 : DEC);
+  const { hops, out } = await routeOut({ path, side: 'buy', amountIn, user });
+  const pct = Number(out.toString()) / SUPPLY_UNITS * 100;
+  if (pct > CONFIG.devCapPct + 1e-9) throw http(400, `That first buy would be ${pct.toFixed(2)}% of supply. The cap is ${CONFIG.devCapPct}%.`);
+  const minOut = out.mul(new BN(Math.round((1 - slip) * 10000))).div(new BN(10000));
+  const ixs = await PUMP_SDK.multiHopSwapInstructions({ user, hops, side: 'buy', amountIn, minAmountOut: minOut });
+  const f = await finalize(user, ixs, [], 1_400_000);
+  return { ...f, step: 'devbuy', dev: { via, amount, tokens: toUi(out), pct } };
 }
 async function build(b) {
   const step = String(b.step || 'launch');
