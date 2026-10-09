@@ -723,8 +723,8 @@ async function check(b) {
   }
   // 11. pump.fun itself
   add('pump', 'pump.fun open', global.createV2Enabled ? 'pass' : 'fail', global.createV2Enabled ? 'New coins are open on pump.fun.' : 'pump.fun has paused new coins.');
-  const ok = !out.some(c => c.status === 'fail') && !out.some(c => c.status === 'wait' && c.id !== 'wallet');
-  return { ok, checks: out };
+  const clear = !out.some(c => c.status === 'fail') && !out.some(c => c.status === 'wait' && c.id !== 'wallet');
+  return { clear, checks: out };
 }
 function fmtBig(n) { return n >= 1e9 ? (n / 1e9).toFixed(1) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'K' : n.toFixed(0); }
 function fmtNum(n) { return n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : (+n).toFixed(n < 10 ? 3 : 1); }
