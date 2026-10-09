@@ -425,20 +425,23 @@ async function pairStatus(mints) {
 async function pairs() {
   return cached('pairs', 10 * 60e3, async () => {
     let live = [];
-    try {
-      const j = await getJson('https://api.geckoterminal.com/api/v2/networks/solana/dexes/pumpswap/pools?page=1&sort=h24_volume_usd_desc&include=base_token', 8000);
-      const toks = Object.fromEntries((j.included || []).filter(x => x.type === 'token').map(x => [x.id, x.attributes]));
-      for (const p of j.data || []) {
-        const r = p.relationships || {}, bt = r.base_token && toks[r.base_token.data.id];
-        const qt = r.quote_token && r.quote_token.data && r.quote_token.data.id || '';
-        if (!bt || !/So11111111111111111111111111111111111111112$/.test(qt)) continue;
-        const a = p.attributes || {};
-        live.push({ mint: bt.address, symbol: clean(bt.symbol, 16), name: clean(bt.name, 40), image: bt.image_url && /^https:/.test(bt.image_url) && !/missing/.test(bt.image_url) ? bt.image_url : null, mcapUsd: +(a.market_cap_usd || a.fdv_usd || 0) || null, chg24: a.price_change_percentage ? +a.price_change_percentage.h24 : null, vol24: a.volume_usd ? +a.volume_usd.h24 : null, src: 'live' });
-      }
-    } catch (e) { }
-    live = live.filter(c => c.symbol && !BAD_WORDS.test(c.symbol + ' ' + c.name) && (c.mcapUsd || 0) >= 3e5);
+    // real pump.fun coins trading on PumpSwap right now (GeckoTerminal), a few pages by 24h volume
+    for (const page of [1, 2, 3, 4]) {
+      try {
+        const j = await getJson(`https://api.geckoterminal.com/api/v2/networks/solana/dexes/pumpswap/pools?page=${page}&sort=h24_volume_usd_desc&include=base_token`, 8000);
+        const toks = Object.fromEntries((j.included || []).filter(x => x.type === 'token').map(x => [x.id, x.attributes]));
+        for (const p of j.data || []) {
+          const r = p.relationships || {}, bt = r.base_token && toks[r.base_token.data.id];
+          const qt = r.quote_token && r.quote_token.data && r.quote_token.data.id || '';
+          if (!bt || !/So11111111111111111111111111111111111111112$/.test(qt) || !/pump$/.test(bt.address || '')) continue;
+          const a = p.attributes || {};
+          live.push({ mint: bt.address, symbol: clean(bt.symbol, 16), name: clean(bt.name, 40), image: bt.image_url && /^https:/.test(bt.image_url) && !/missing/.test(bt.image_url) ? bt.image_url : null, mcapUsd: +(a.market_cap_usd || a.fdv_usd || 0) || null, chg24: a.price_change_percentage ? +a.price_change_percentage.h24 : null, vol24: a.volume_usd ? +a.volume_usd.h24 : null, src: 'live' });
+        }
+      } catch (e) { break; }
+    }
+    live = live.filter(c => c.symbol && !BAD_WORDS.test(c.symbol + ' ' + c.name) && (c.mcapUsd || 0) >= 5e4);
     const known = CURATED.map(([s, m]) => ({ mint: m, symbol: s, name: s, image: `/img/coins/${s}.png`, src: 'known' }));
-    const all = [...known, ...live].filter((c, i, a) => a.findIndex(x => x.mint === c.mint) === i).slice(0, 44);
+    const all = [...known, ...live].filter((c, i, a) => a.findIndex(x => x.mint === c.mint) === i).slice(0, 90);
     const st = await pairStatus(all.map(c => new PublicKey(c.mint)));
     const dex = await dexFor(known.map(c => c.mint)).catch(() => ({}));
     const rows = all.map((c, i) => { const d = dex[c.mint]; return { ...c, mcapUsd: c.mcapUsd || (d && +(d.marketCap || d.fdv)) || null, chg24: c.chg24 != null ? c.chg24 : d && d.priceChange ? +d.priceChange.h24 : null, pairable: st[i].ok, venue: st[i].venue || null, why: st[i].why || '' }; });
