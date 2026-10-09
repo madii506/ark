@@ -78,6 +78,8 @@ export async function copy(text, msg = 'Copied') {
 }
 
 /* ---------- wallets (Wallet Standard: Phantom, Solflare, Backpack, …) ---------- */
+const LS = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const LSset = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { } };
 export const W = { list: [], w: null, acct: null, on: new Set(), change: new Set() };
 function addWallet(w) {
   try {
@@ -92,8 +94,6 @@ function addWallet(w) {
 const walletApi = Object.freeze({ register: (...ws) => { ws.forEach(addWallet); return () => { }; } });
 window.addEventListener('wallet-standard:register-wallet', e => { try { e.detail(walletApi); } catch (_) { } });
 try { window.dispatchEvent(new CustomEvent('wallet-standard:app-ready', { detail: walletApi })); } catch (_) { }
-const LS = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
-const LSset = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { } };
 async function tryRestore(w) {
   if (W.acct || LS('ark.wallet') !== w.name) return;
   try {
