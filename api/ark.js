@@ -426,9 +426,9 @@ async function pairs() {
   return cached('pairs', 10 * 60e3, async () => {
     let live = [];
     // real pump.fun coins trading on PumpSwap right now (GeckoTerminal), a few pages by 24h volume
-    for (const page of [1, 2, 3, 4]) {
+    for (const [dexId, page] of [['pumpswap', 1], ['pump-fun', 1], ['pumpswap', 2], ['pump-fun', 2], ['pumpswap', 3]]) {
       try {
-        const j = await getJson(`https://api.geckoterminal.com/api/v2/networks/solana/dexes/pumpswap/pools?page=${page}&sort=h24_volume_usd_desc&include=base_token`, 8000);
+        const j = await getJson(`https://api.geckoterminal.com/api/v2/networks/solana/dexes/${dexId}/pools?page=${page}&sort=h24_volume_usd_desc&include=base_token`, 8000);
         const toks = Object.fromEntries((j.included || []).filter(x => x.type === 'token').map(x => [x.id, x.attributes]));
         for (const p of j.data || []) {
           const r = p.relationships || {}, bt = r.base_token && toks[r.base_token.data.id];
@@ -437,9 +437,9 @@ async function pairs() {
           const a = p.attributes || {};
           live.push({ mint: bt.address, symbol: clean(bt.symbol, 16), name: clean(bt.name, 40), image: bt.image_url && /^https:/.test(bt.image_url) && !/missing/.test(bt.image_url) ? bt.image_url : null, mcapUsd: +(a.market_cap_usd || a.fdv_usd || 0) || null, chg24: a.price_change_percentage ? +a.price_change_percentage.h24 : null, vol24: a.volume_usd ? +a.volume_usd.h24 : null, src: 'live' });
         }
-      } catch (e) { break; }
+      } catch (e) { if (/429/.test(String(e.message))) break; }
     }
-    live = live.filter(c => c.symbol && !BAD_WORDS.test(c.symbol + ' ' + c.name) && (c.mcapUsd || 0) >= 5e4);
+    live = live.filter(c => c.symbol && !BAD_WORDS.test(c.symbol + ' ' + c.name) && (c.mcapUsd || 0) >= 2e4);
     const known = CURATED.map(([s, m]) => ({ mint: m, symbol: s, name: s, image: `/img/coins/${s}.png`, src: 'known' }));
     const all = [...known, ...live].filter((c, i, a) => a.findIndex(x => x.mint === c.mint) === i).slice(0, 90);
     const st = await pairStatus(all.map(c => new PublicKey(c.mint)));
