@@ -890,12 +890,15 @@ async function img(req, res, u) {
 /* ---------------- lab: prove the launch path against any pump coin (simulation only) ---------------- */
 async function recentPumpCoins(limit = 120) {
   const sigs = await rpc(c => c.getSignaturesForAddress(PUMP_PROGRAM_ID, { limit }));
-  const found = [];
   const txs = await getTxs(sigs.filter(s => !s.err).map(s => s.signature), 10);
+  const creates = [], trades = [];
   let seen = 0;
-  for (const tx of txs) { if (tx) seen++; for (const raw of eventsOf(tx, 'CreateEvent')) { const ev = safe(() => PUMP_SDK.decodeCreateEventBc(raw)); if (ev) found.push(ev); } }
-  found.seen = seen;
-  return found;
+  for (const tx of txs) {
+    if (!tx) continue; seen++;
+    for (const raw of eventsOf(tx, 'CreateEvent')) { const ev = safe(() => PUMP_SDK.decodeCreateEventBc(raw)); if (ev) creates.push(ev); }
+    for (const raw of eventsOf(tx, 'TradeEvent')) { const ev = safe(() => PUMP_SDK.decodeTradeEventBc(raw)); if (ev) trades.push(ev); }
+  }
+  return { creates, trades, seen };
 }
 async function holderWith(mint, minSol = 0.08) {
   const largest = await rpc(c => c.getTokenLargestAccounts(mint));
@@ -916,11 +919,20 @@ async function lab(qs) {
   const step = (k, v) => out.steps.push({ k, ...v, ms: Date.now() - t0 });
   let recent = null;
   let qMint = qs.get('q') ? pk(qs.get('q'), 'q') : null;
-  if (!qMint) {
-    recent = await recentPumpCoins(Number(qs.get('scan')) || 120);
-    const cand = recent.filter(e => e.quoteMint.equals(PublicKey.default) && !e.isMayhemMode && !(e.depth > 0));
-    if (!cand.length) { step('pick', { ok: false, note: 'no fresh SOL-quoted coin in the scan', seen: recent.seen, creates: recent.length }); return out; }
-    qMint = cand[0].mint; step('pick', { ok: true, mint: qMint.toBase58(), symbol: cand[0].symbol, seenCreates: recent.length, pairedSeen: recent.filter(e => e.depth > 0).map(e => ({ mint: e.mint.toBase58(), quote: e.quoteMint.toBase58(), symbol: e.symbol, holderReward: !!e.isHolderReward })).slice(0, 6) });
+  const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+  if (!qMint || qs.get('route')) {
+    recent = await recentPumpCoins(Number(qs.get('scan')) || 150);
+    const count = {};
+    for (const t of recent.trades) if (t.quoteMint.equals(PublicKey.default) && !t.mayhemMode) { const k = t.mint.toBase58(); count[k] = (count[k] || 0) + 1; }
+    const ranked = Object.entries(count).sort((a, b) => b[1] - a[1]).map(e => e[0]);
+    const paired = recent.trades.filter(t => !t.quoteMint.equals(PublicKey.default) && t.quoteMint.toBase58() !== USDC).map(t => ({ mint: t.mint.toBase58(), quote: t.quoteMint.toBase58(), holderReward: !t.holderRewardsBps.isZero() }));
+    recent.paired = paired;
+    step('scan', { seen: recent.seen, creates: recent.creates.length, trades: recent.trades.length, solCoins: ranked.length, paired: paired.slice(0, 5), createsSeen: recent.creates.slice(0, 4).map(c => ({ mint: c.mint.toBase58(), symbol: c.symbol, quote: c.quoteMint.toBase58(), depth: c.depth, holderReward: !!c.isHolderReward })) });
+    if (!qMint) {
+      for (const k of ranked.slice(0, 6)) { try { await sdkCall(s => s.resolveQuoteMint(new PublicKey(k))); qMint = new PublicKey(k); break; } catch (e) { step('skip', { mint: k, why: friendly(e) }); } }
+      if (!qMint) { step('pick', { ok: false, note: 'no eligible SOL-quoted coin in the scan' }); return out; }
+      step('pick', { ok: true, mint: qMint.toBase58() });
+    }
   }
   let q;
   try { q = await sdkCall(s => s.resolveQuoteMint(qMint)); step('resolve', { ok: true, source: q.source, depth: q.pumpQuote ? q.pumpQuote.depth : 0, program: q.quoteTokenProgram.toBase58(), seed: q.initialVirtualQuoteReserves.toString() }); }
@@ -963,10 +975,10 @@ async function lab(qs) {
   } catch (e) { step('fund', { ok: false, error: String(e.message || e).slice(0, 300) }); }
   // 4. SOL -> quote -> a coin already paired to it (if the scan saw one), the route every ARK buy takes
   try {
-    const paired = (recent || []).find(e => e.depth > 0 && !e.quoteMint.equals(PublicKey.default));
+    const paired = recent && recent.paired && recent.paired[0];
     if (paired) {
-      const { hops, out: o } = await routeOut({ path: [SOL, paired.quoteMint, paired.mint], side: 'buy', amountIn: toUnits(0.05, 9), user: await quoter() });
-      step('route2', { ok: true, coin: paired.mint.toBase58(), quote: paired.quoteMint.toBase58(), venues: hops.map(h => h.venue), out: toUi(o) });
+      const { hops, out: o } = await routeOut({ path: [SOL, new PublicKey(paired.quote), new PublicKey(paired.mint)], side: 'buy', amountIn: toUnits(0.05, 9), user: await quoter() });
+      step('route2', { ok: true, coin: paired.mint, quote: paired.quote, venues: hops.map(h => h.venue), out: toUi(o) });
     } else step('route2', { ok: false, note: 'no coin quoted in a pump coin in this scan' });
   } catch (e) { step('route2', { ok: false, error: String(e.message || e).slice(0, 300) }); }
   return out;
